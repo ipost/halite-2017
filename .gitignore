@@ -1,0 +1,7 @@
+*.swp
+*.swo
+replay*.hlt
+log_*.txt
+Halite*.app
+target/release
+target/debug
