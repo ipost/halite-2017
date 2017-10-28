@@ -1,5 +1,6 @@
 
 
+use std::cell::Cell;
 use std::cmp::min;
 
 use hlt::parse::Decodable;
@@ -53,8 +54,8 @@ pub struct Ship {
     pub id: i32,
     pub position: Position,
     pub hp: i32,
-    pub velocity_x: f64,
-    pub velocity_y: f64,
+    pub velocity_x: Cell<f64>,
+    pub velocity_y: Cell<f64>,
     pub docking_status: DockingStatus,
     pub docked_planet: Option<i32>,
     pub progress: i32,
@@ -76,7 +77,7 @@ impl Ship {
     }
 
     pub fn can_dock(&self, planet: &Planet) -> bool {
-        self.calculate_distance_between(planet) <= (DOCK_RADIUS + planet.radius)
+        self.distance_to(planet) <= (DOCK_RADIUS + planet.radius)
     }
 
     pub fn navigate<T: Entity>(&self, target: &T, game_map: &GameMap, max_corrections: i32) -> Option<Command> {
@@ -85,7 +86,7 @@ impl Ship {
         }
         let angular_step = 1.0;
         let speed = MAX_SPEED;
-        let distance = self.calculate_distance_between(target);
+        let distance = self.distance_to(target);
         let angle = self.calculate_angle_between(target);
         if game_map.obstacles_between(self, target) {
             let new_target_dx = f64::cos((angle + angular_step).to_radians()) * distance;
@@ -94,7 +95,28 @@ impl Ship {
             let new_target = Position(self_x + new_target_dx, self_y + new_target_dy);
             self.navigate(&new_target, game_map, max_corrections - 1)
         } else {
-            Some(self.thrust(min(speed, distance as i32), angle as i32))
+            let thrust_speed = min(speed, distance as i32);
+            let thrust_angle = angle as i32;
+            let velocity_x = thrust_speed as f64 * (thrust_angle as f64).to_radians().cos();
+            let velocity_y = thrust_speed as f64 * (thrust_angle as f64).to_radians().sin();
+            self.velocity_x.set(velocity_x);
+            self.velocity_y.set(velocity_y);
+            let my_ships = game_map.get_me().all_ships();
+            let colliding_ship =
+                my_ships.iter()
+                .filter(|other| *other != self && self.distance_to(*other) < 2f64 * (SHIP_RADIUS + MAX_SPEED as f64))
+                .find(|other|
+                     [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0].iter()
+                     .any(|t|
+                          self.dist_to_at(*other, t.clone()) < SHIP_RADIUS * 2f64
+                         )
+                    );
+            self.velocity_x.set(0f64);
+            self.velocity_y.set(0f64);
+            match collision_imminent {
+                Some(other_ship) => Some(self.thrust(1, thrust_angle)),
+                None => Some(self.thrust(thrust_speed, thrust_angle))
+            }
         }
     }
 }
@@ -108,8 +130,8 @@ impl Decodable for Ship {
         let id = i32::parse(tokens);
         let position = Position::parse(tokens);
         let hp = i32::parse(tokens);
-        let velocity_x = f64::parse(tokens);
-        let velocity_y = f64::parse(tokens);
+        let velocity_x = Cell::new(f64::parse(tokens));
+        let velocity_y = Cell::new(f64::parse(tokens));
         let docking_status = DockingStatus::parse(tokens);
         let docked_planet_raw = i32::parse(tokens);
         let docked_planet = match docking_status {
@@ -119,7 +141,7 @@ impl Decodable for Ship {
         let progress = i32::parse(tokens);
         let cooldown = i32::parse(tokens);
 
-        return Ship {
+        let ship = Ship {
             id,
             position,
             hp,
@@ -130,6 +152,7 @@ impl Decodable for Ship {
             progress,
             cooldown,
         };
+        return ship;
     }
 }
 
@@ -203,11 +226,18 @@ impl Decodable for GameState {
 
 pub trait Entity : Sized {
     fn get_position(&self) -> Position;
+    fn get_position_at(&self, t: f64) -> Position;
     fn get_radius(&self) -> f64;
 
-    fn calculate_distance_between<T: Entity>(&self, target: &T) -> f64 {
+    fn distance_to<T: Entity>(&self, target: &T) -> f64 {
         let Position(x1, y1) = self.get_position();
         let Position(x2, y2) = target.get_position();
+        f64::sqrt((x2-x1).powi(2) + (y2-y1).powi(2))
+    }
+
+    fn dist_to_at<T: Entity>(&self, target: &T, t: f64) -> f64 {
+        let Position(x1, y1) = self.get_position_at(t);
+        let Position(x2, y2) = target.get_position_at(t);
         f64::sqrt((x2-x1).powi(2) + (y2-y1).powi(2))
     }
 
@@ -229,17 +259,24 @@ pub trait Entity : Sized {
 }
 
 impl Entity for Ship {
-    fn get_position(&self) -> Position {
-        self.position
+    fn get_position(&self) -> Position { self.position }
+
+    fn get_position_at(&self, t: f64) -> Position {
+        Position(
+            self.position.0 + (t * self.velocity_x.get()),
+            self.position.1 + (t * self.velocity_y.get())
+            )
     }
 
-    fn get_radius(&self) -> f64 {
-        SHIP_RADIUS
-    }
+    fn get_radius(&self) -> f64 { SHIP_RADIUS }
 }
 
 impl Entity for Planet {
     fn get_position(&self) -> Position {
+        self.position
+    }
+
+    fn get_position_at(&self, t: f64) -> Position {
         self.position
     }
 
@@ -253,7 +290,12 @@ impl Entity for Position {
         *self
     }
 
+    fn get_position_at(&self, t: f64) -> Position {
+        *self
+    }
+
     fn get_radius(&self) -> f64 {
         0.0
     }
 }
+
