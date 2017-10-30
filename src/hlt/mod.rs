@@ -6,4 +6,5 @@ pub mod constants;
 pub mod game_map;
 pub mod player;
 pub mod collision;
+pub mod pathfind;
 mod parse;

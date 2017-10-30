@@ -8,6 +8,7 @@ use hlt::command::Command;
 use hlt::constants::{DOCK_RADIUS, SHIP_RADIUS, MAX_SPEED};
 use hlt::player::Player;
 use hlt::game_map::GameMap;
+use hlt::logging::Logger;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Position(pub f64, pub f64);
@@ -80,20 +81,28 @@ impl Ship {
         self.distance_to(planet) <= (DOCK_RADIUS + planet.radius)
     }
 
+    pub fn is_undocked(&self) -> bool {
+        self.docking_status == DockingStatus::UNDOCKED
+    }
+
     pub fn navigate<T: Entity>(&self, target: &T, game_map: &GameMap, max_corrections: i32) -> Option<Command> {
         if max_corrections <= 0 {
             return None
         }
-        let angular_step = 1.0;
+        //let mut logger = Logger::new(0);// 0 is the bot at target/release/MyBot, player 0 when ./run_game.sh is used
+        let angular_step = 1.5;
         let speed = MAX_SPEED;
         let distance = self.distance_to(target);
         let angle = self.calculate_angle_between(target);
-        if game_map.obstacles_between(self, target) {
+        let recalculate = || -> Option<Command> {
             let new_target_dx = f64::cos((angle + angular_step).to_radians()) * distance;
             let new_target_dy = f64::sin((angle + angular_step).to_radians()) * distance;
             let Position(self_x, self_y) = self.position;
             let new_target = Position(self_x + new_target_dx, self_y + new_target_dy);
             self.navigate(&new_target, game_map, max_corrections - 1)
+        };
+        if game_map.obstacles_between(self, target) {
+            recalculate()
         } else {
             let thrust_speed = min(speed, distance as i32);
             let thrust_angle = angle as i32;
@@ -102,19 +111,25 @@ impl Ship {
             self.velocity_x.set(velocity_x);
             self.velocity_y.set(velocity_y);
             let my_ships = game_map.get_me().all_ships();
+            let step_count = 10i32;
             let colliding_ship =
                 my_ships.iter()
                 .filter(|other| *other != self && self.distance_to(*other) < 2f64 * (SHIP_RADIUS + MAX_SPEED as f64))
                 .find(|other|
-                     [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0].iter()
+                     (1..(step_count+1)).collect::<Vec<i32>>().iter()
                      .any(|t|
-                          self.dist_to_at(*other, t.clone()) < SHIP_RADIUS * 2f64
+                          self.dist_to_at(*other, (*t as f64 / step_count as f64).clone()) < SHIP_RADIUS * 2f64
                          )
                     );
             self.velocity_x.set(0f64);
             self.velocity_y.set(0f64);
-            match collision_imminent {
-                Some(other_ship) => Some(self.thrust(1, thrust_angle)),
+            // if collision with other ship X would happen and X is not docked/docking and X has
+            // not yet gotten a move order for this turn, return None and try to calculate a new
+            // move for self after X has been given orders
+            match colliding_ship {
+                Some(other_ship) => {
+                    recalculate()
+                },
                 None => Some(self.thrust(thrust_speed, thrust_angle))
             }
         }
@@ -172,6 +187,10 @@ pub struct Planet {
 impl Planet {
     pub fn is_owned(&self) -> bool {
         self.owner.is_some()
+    }
+
+    pub fn open_docks(&self) -> usize {
+        self.num_docking_spots as usize - self.docked_ships.len()
     }
 }
 

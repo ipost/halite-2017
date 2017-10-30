@@ -6,7 +6,7 @@
 
 mod hlt;
 
-use hlt::entity::{Entity, DockingStatus};
+use hlt::entity::{Entity, DockingStatus, Planet, Ship};
 use hlt::game::Game;
 use hlt::logging::Logger;
 use hlt::command::Command;
@@ -20,8 +20,10 @@ fn main() {
     logger.log(&format!("Starting my {} bot!", bot_name));
 
     // For each turn
+    let mut turn_number: usize = 0;
     loop {
-        logger.log("turn");
+        turn_number = turn_number + 1;
+        logger.log(&format!("turn {}", turn_number));
         // Update the game state
         let game_map = game.update_map();
         let mut command_queue: Vec<Command> = Vec::new();
@@ -35,9 +37,11 @@ fn main() {
             }
 
             // Loop over all planets
-            for planet in game_map.all_planets() {
-                // Ignore unowned planets
-                if planet.is_owned() {
+            let mut planets_by_distance = game_map.all_planets().iter().collect::<Vec<&Planet>>();
+            planets_by_distance.sort_by(|p1, p2| p1.distance_to(ship).partial_cmp(&p2.distance_to(ship)).unwrap());
+            for planet in planets_by_distance.iter() {
+                // Skip a planet if I own it and it has no open docks
+                if planet.is_owned() && (planet.owner.unwrap() == game.my_id as i32) && planet.open_docks() == 0 {
                     continue;
                 }
 
@@ -46,13 +50,13 @@ fn main() {
                     command_queue.push(ship.dock(planet))
                 } else {
                     // If not, navigate towards the planet
-                    let navigate_command = ship.navigate(&ship.closest_point_to(planet, 3.0), &game_map, 90);
+                    let navigate_command = ship.navigate(&ship.closest_point_to(*planet, 3.0), &game_map, 90);
                     match navigate_command {
                         Some(command) => {
                             if let Command::Thrust(ship_id, magnitude, angle) = command {
                                 ship.velocity_x.set(magnitude as f64 * (angle as f64).to_radians().cos());
                                 ship.velocity_y.set(magnitude as f64 * (angle as f64).to_radians().sin());
-                                logger.log(&format!("{} : velocity: {}, {}", ship_id, ship.velocity_x.get(), ship.velocity_y.get()));
+                                //logger.log(&format!("{} : velocity: {}, {}", ship_id, ship.velocity_x.get(), ship.velocity_y.get()));
                             }
                             command_queue.push(command);
                         },
