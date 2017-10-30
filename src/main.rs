@@ -47,7 +47,9 @@ fn main() {
 
                 if ship.can_dock(planet) {
                     // If we are close enough to dock, do it!
-                    command_queue.push(ship.dock(planet))
+                    let c = ship.dock(planet);
+                    command_queue.push(c.clone());
+                    ship.command.set(Some(c));
                 } else {
                     // If not, navigate towards the planet
                     let navigate_command = ship.navigate(&ship.closest_point_to(*planet, 3.0), &game_map, 90);

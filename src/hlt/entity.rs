@@ -50,7 +50,7 @@ impl Decodable for DockingStatus {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Debug)]
 pub struct Ship {
     pub id: i32,
     pub position: Position,
@@ -61,6 +61,7 @@ pub struct Ship {
     pub docked_planet: Option<i32>,
     pub progress: i32,
     pub cooldown: i32,
+    pub command: Cell<Option<Command>>
 }
 
 impl Ship {
@@ -114,7 +115,10 @@ impl Ship {
             let step_count = 10i32;
             let colliding_ship =
                 my_ships.iter()
-                .filter(|other| *other != self && self.distance_to(*other) < 2f64 * (SHIP_RADIUS + MAX_SPEED as f64))
+                // only ships that could collide this turn need be checked
+                .filter(|other| other.id != self.id &&
+                                self.distance_to(*other) < 2f64 * (SHIP_RADIUS + MAX_SPEED as f64) &&
+                                other.is_undocked())
                 .find(|other|
                      (1..(step_count+1)).collect::<Vec<i32>>().iter()
                      .any(|t|
@@ -133,6 +137,12 @@ impl Ship {
                 None => Some(self.thrust(thrust_speed, thrust_angle))
             }
         }
+    }
+}
+
+impl PartialEq for Ship {
+    fn eq(&self, other: &Ship) -> bool {
+        self.id == other.id
     }
 }
 
@@ -155,6 +165,7 @@ impl Decodable for Ship {
         };
         let progress = i32::parse(tokens);
         let cooldown = i32::parse(tokens);
+        let command = Cell::new(None);
 
         let ship = Ship {
             id,
@@ -166,6 +177,7 @@ impl Decodable for Ship {
             docked_planet,
             progress,
             cooldown,
+            command
         };
         return ship;
     }
