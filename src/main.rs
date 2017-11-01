@@ -23,13 +23,16 @@ fn main() {
     let mut turn_number: usize = 0;
     loop {
         turn_number = turn_number + 1;
-        logger.log(&format!("turn {}", turn_number));
         // Update the game state
         let game_map = game.update_map();
         let mut command_queue: Vec<Command> = Vec::new();
 
         // Loop over all of our player's ships
         let ships = game_map.get_me().all_ships();
+        let ship_ids = ships.iter().map(|s|
+                                 s.id.to_string()
+                                ).collect::<Vec<String>>().join(" ");
+        logger.log(&format!("turn {}, my ships: {}", turn_number, ship_ids));
         for ship in ships {
             // Ignore ships that are docked or in the process of docking
             if ship.docking_status != DockingStatus::UNDOCKED {
@@ -45,13 +48,16 @@ fn main() {
                     continue;
                 }
 
+                //./halite_osx -d "180 180" -s 3288636877 "target/release/MyBot" "./VanillaSettler"
+                // test with above seed to navigate to far planet
+                if planet.id != 13 { continue }
+
                 if ship.can_dock(planet) {
-                    // If we are close enough to dock, do it!
                     let c = ship.dock(planet);
+                    logger.log(&format!("Ship {} docking to {}", ship.id, planet.id));
                     command_queue.push(c.clone());
                     ship.command.set(Some(c));
                 } else {
-                    // If not, navigate towards the planet
                     let navigate_command = ship.navigate(&ship.closest_point_to(*planet, 3.0), &game_map, 90);
                     match navigate_command {
                         Some(command) => {
@@ -59,6 +65,7 @@ fn main() {
                                 ship.velocity_x.set(magnitude as f64 * (angle as f64).to_radians().cos());
                                 ship.velocity_y.set(magnitude as f64 * (angle as f64).to_radians().sin());
                                 //logger.log(&format!("{} : velocity: {}, {}", ship_id, ship.velocity_x.get(), ship.velocity_y.get()));
+                                //logger.log(&format!("{} : speed: {}, angle: {}", ship_id, magnitude, angle));
                             }
                             command_queue.push(command);
                         },
@@ -69,6 +76,9 @@ fn main() {
             }
         }
         // Send our commands to the game
+        // for c in &command_queue {
+        //     logger.log(&c.encode());
+        // }
         game.send_command_queue(command_queue);
     }
 }
