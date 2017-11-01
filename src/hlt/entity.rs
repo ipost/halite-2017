@@ -13,6 +13,11 @@ use hlt::logging::Logger;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Position(pub f64, pub f64);
+impl Position {
+    pub fn as_string(&self) -> String {
+        format!("{}, {}", self.0, self.1)
+    }
+}
 
 impl Decodable for Position {
     fn parse<'a, I>(tokens: &mut I) -> Position
@@ -94,13 +99,13 @@ impl Ship {
         let mut logger = Logger::new(0);// 0 is the bot at target/release/MyBot, player 0 when ./run_game.sh is used
         let angular_step = 1.0;
         let speed = MAX_SPEED;
-        let effective_planet_radius_modifier = SHIP_RADIUS + SHIP_RADIUS + DOCK_RADIUS; // path around ship docking zone
+        let effective_planet_radius_modifier = 1.0;//SHIP_RADIUS + SHIP_RADIUS + DOCK_RADIUS; // path around ship docking zone
         let distance = self.distance_to(target);
-        let closest_obstacle = game_map.closest_planet(&self.get_position(), &target.get_position(), effective_planet_radius_modifier);
+        let closest_planet = game_map.closest_planet(&self.get_position(), &target.get_position(), effective_planet_radius_modifier);
         let angle = match closest_planet {
-            Some((pos, radius)) => {
-                logger.log(&format!("  ship {} routing around: {}, {}", self.id, pos.0, pos.1));
-                shorter_turn_around(self.get_position(), target.get_position(), pos, effective_planet_radius_modifier + radius)
+            Some(planet) => {
+                //logger.log(&format!("  ship {} routing around: {}", self.id, planet.get_position().as_string()));
+                shorter_turn_around(self.get_position(), target.get_position(), planet.get_position(), effective_planet_radius_modifier + planet.get_radius())
             },
             None => {self.calculate_angle_between(target)}
         };
@@ -138,7 +143,7 @@ impl Ship {
                 self.navigate(&new_target, game_map, max_corrections - 1)
             },
             None => {
-                //logger.log(&format!("angle: {}", angle as i32));
+                //logger.log(&format!("  angle: {}", angle as i32));
                 Some(self.thrust(thrust_speed, angle as i32))
             }
         }
@@ -208,6 +213,10 @@ impl Planet {
 
     pub fn open_docks(&self) -> usize {
         self.num_docking_spots as usize - self.docked_ships.len()
+    }
+
+    pub fn any_docked(&self) -> bool {
+        self.docked_ships.len() > 0
     }
 }
 

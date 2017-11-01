@@ -65,7 +65,7 @@ fn main() {
                                 ship.velocity_x.set(magnitude as f64 * (angle as f64).to_radians().cos());
                                 ship.velocity_y.set(magnitude as f64 * (angle as f64).to_radians().sin());
                                 //logger.log(&format!("{} : velocity: {}, {}", ship_id, ship.velocity_x.get(), ship.velocity_y.get()));
-                                //logger.log(&format!("{} : speed: {}, angle: {}", ship_id, magnitude, angle));
+                                logger.log(&format!("  ship {} : speed: {}, angle: {}", ship_id, magnitude, angle));
                             }
                             command_queue.push(command);
                         },

@@ -4,6 +4,7 @@ use hlt::entity::{GameState, Planet, Position};
 use hlt::player::Player;
 use hlt::collision::intersect_segment_circle;
 use hlt::entity::{Entity, Ship};
+use hlt::logging::Logger;
 
 pub struct GameMap<'a> {
     game: &'a Game,
@@ -29,17 +30,16 @@ impl<'a> GameMap<'a> {
         return player;
     }
 
-    pub fn closest_planet(&self, start: &Position, destination: &Position, nav_radius: f64) -> Option<(Position, f64)> {
-        let mut pos: Option<Position> = None;
-        let mut radius: Option<f64> = None;
+    pub fn closest_planet(&self, start: &Position, destination: &Position, nav_radius: f64) -> Option<&Planet> {
+        //let mut logger = Logger::new(0);
         let mut dist: f64 = 99999999f64;
+        let mut obstacle_planet: Option<&Planet> = None;
         let fudge = 0.05f64;
         for planet in self.all_planets() {
             let distance_to_surface = planet.distance_to(start) - (planet.get_radius() + nav_radius);
             if distance_to_surface < dist && intersect_segment_circle(start, destination, planet, nav_radius + fudge) {
-                pos = Some(planet.get_position());
-                radius = Some(planet.get_radius());
                 dist = distance_to_surface;
+                obstacle_planet = Some(planet);
             }
         }
         /*
@@ -53,12 +53,7 @@ impl<'a> GameMap<'a> {
             }
         }
         */
-        //question: is navigating around the nearest obstacle optimal/sufficient?
-        //closest by (distance - radius) should be correct?
-        match pos {
-            Some(position) => { return Some((position, radius.unwrap())) },
-            None => return None
-        }
+        obstacle_planet
     }
 
     /*
