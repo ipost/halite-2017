@@ -10,7 +10,7 @@ use hlt::entity::{DockingStatus, Entity, Planet, Ship};
 use hlt::game::Game;
 use hlt::logging::Logger;
 use hlt::command::Command;
-use hlt::constants::MAX_CORRECTIONS;
+use hlt::constants::{MAX_CORRECTIONS, WEAPON_RADIUS};
 extern crate time;
 use time::PreciseTime;
 
@@ -56,7 +56,6 @@ fn main() {
                     logger.log(&format!("  ship {} will remain {}", ship.id, ship.docking_status));
                     return false;
                 } else {
-
                     let mut planets_by_distance = game_map.all_planets().iter().collect::<Vec<&Planet>>();
                     planets_by_distance.sort_by(|p1, p2|
                                                 p1.distance_to(*ship).partial_cmp(&p2.distance_to(*ship)).unwrap()
@@ -69,18 +68,46 @@ fn main() {
                             continue;
                         }
 
-                        if ship.can_dock(planet) {
+                        if ship.in_dock_range(planet) && (!planet.is_owned() || (planet.owner.unwrap() == game.my_id as i32 && planet.open_docks() > 0)) {
                             let c = ship.dock(planet);
                             logger.log(&format!("  Ship {} docking to {}", ship.id, planet.id));
                             command_queue.push(c);
                             ship.command.set(Some(c));
                             return false
                         } else {
+                            let destination = &ship.closest_point_to(*planet, 3.0);
                             let navigate_command: Option<Command> = ship.navigate(
-                                &ship.closest_point_to(*planet, 3.0),
+                                destination,
                                 &game_map,
                                 MAX_CORRECTIONS);
                             match navigate_command {
+                                Some(command) => {
+                                    if let Command::Thrust(ship_id, magnitude, angle) = command {
+                                        ship.velocity_x.set(magnitude as f64 * (angle as f64).to_radians().cos());
+                                        ship.velocity_y.set(magnitude as f64 * (angle as f64).to_radians().sin());
+                                        logger.log(&format!(
+                                                "  ship {} : speed: {}, angle: {}, target: {}",
+                                                ship_id, magnitude, angle, destination.as_string()));
+                                    }
+                                    command_queue.push(command);
+                                    ship.command.set(Some(command));
+                                    return false
+                                },
+                                _ => {}
+                            }
+                        }
+                        break;
+                    }
+                    let mut closest_enemy_ships = game_map.enemy_ships();
+                    closest_enemy_ships.sort_by(|p1, p2|
+                                                p1.distance_to(*ship).partial_cmp(&p2.distance_to(*ship)).unwrap()
+                                               );
+                    for enemy_ship in closest_enemy_ships {
+                        if !enemy_ship.is_undocked() {
+                            match ship.navigate(
+                                &ship.closest_point_to(enemy_ship, WEAPON_RADIUS / 2.0),
+                                &game_map,
+                                MAX_CORRECTIONS) {
                                 Some(command) => {
                                     if let Command::Thrust(ship_id, magnitude, angle) = command {
                                         ship.velocity_x.set(magnitude as f64 * (angle as f64).to_radians().cos());
@@ -96,7 +123,6 @@ fn main() {
                                 _ => {}
                             }
                         }
-                        break;
                     }
                     true
                 });

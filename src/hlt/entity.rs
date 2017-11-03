@@ -1,7 +1,7 @@
 
 
 use std::cell::Cell;
-use std::cmp::min;
+use std::cmp::{min, max};
 use std::fmt;
 
 use hlt::pathfind::avoid;
@@ -102,7 +102,7 @@ impl Ship {
         Command::Undock(self.id)
     }
 
-    pub fn can_dock(&self, planet: &Planet) -> bool {
+    pub fn in_dock_range(&self, planet: &Planet) -> bool {
         self.distance_to(planet) <= (DOCK_RADIUS + planet.radius)
     }
 
@@ -126,7 +126,7 @@ impl Ship {
             ),
             None => self.calculate_angle_between(target),
         };
-        let thrust_speed = min(speed, distance as i32);
+        let thrust_speed = max(1, min(speed, distance as i32));
         let velocity_x = thrust_speed as f64 * desired_trajectory.to_radians().cos();
         let velocity_y = thrust_speed as f64 * desired_trajectory.to_radians().sin();
 
@@ -299,7 +299,6 @@ pub trait Entity: Sized {
     fn get_position(&self) -> Position;
     fn get_position_at(&self, t: f64) -> Position;
     fn get_radius(&self) -> f64;
-    // fn clone(&self) -> Self where Self: Sized;
 
     fn distance_to<T: Entity>(&self, target: &T) -> f64 {
         let Position(x1, y1) = self.get_position();

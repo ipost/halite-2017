@@ -29,6 +29,15 @@ impl<'a> GameMap<'a> {
             .collect()
     }
 
+    pub fn enemy_ships(&self) -> Vec<&Ship> {
+        self.state
+            .players
+            .iter()
+            .filter(|p| p.id != self.game.my_id as i32)
+            .flat_map(|p| p.all_ships())
+            .collect()
+    }
+
     pub fn get_me(&self) -> &Player {
         let my_id = self.game.my_id;
         let player = &self.state.players[my_id];
@@ -69,24 +78,4 @@ impl<'a> GameMap<'a> {
         }
         obstacle
     }
-
-    /*
-    pub fn obstacles_between<T: Entity>(&self, ship: &Ship, target: &T) -> Vec<&T> {
-        let mut obstacles: Vec<&T> = Vec::new();
-        for planet in self.all_planets() {
-            if intersect_segment_circle(ship, target, planet, ship.get_radius() + 0.1) {
-                obstacles.push(planet);
-            }
-        }
-        // all ships which are not undocked are also stationary obstacles
-        for other_ship in self.all_ships().iter().filter(|s| !s.is_undocked()) {
-            if intersect_segment_circle(ship, target, *other_ship, ship.get_radius() + 0.05) {
-                obstacles.push(*other_ship);
-            }
-        }
-        //question: is navigating around the nearest obstacle optimal/sufficient?
-        //closest by (distance - radius) should be correct?
-        return obstacles
-    }
-    */
 }
