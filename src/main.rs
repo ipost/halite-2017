@@ -1,18 +1,18 @@
-/*
- * This is a Rust implementation of the Settler starter bot for Halite-II
- * For the most part, the code is organized like the Python version, so see that
+/* This is a Rust implementation of the Settler starter bot for Halite-II
+ * For the most part, the code is organized like the Python version, so see
+ * that
  * code for more information.
- */
+ * */
 
 mod hlt;
 
-use hlt::entity::{Entity, DockingStatus, Planet, Ship};
+use hlt::entity::{DockingStatus, Entity, Planet, Ship};
 use hlt::game::Game;
 use hlt::logging::Logger;
 use hlt::command::Command;
-use hlt::constants::{MAX_CORRECTIONS};
+use hlt::constants::MAX_CORRECTIONS;
 extern crate time;
-use time::{PreciseTime};
+use time::PreciseTime;
 
 fn main() {
     // Initialize the game
@@ -33,9 +33,11 @@ fn main() {
 
         // Loop over all of our player's ships
         let ships: &Vec<Ship> = game_map.get_me().all_ships();
-        let ship_ids = ships.iter().map(|s|
-                                        s.id.to_string()
-                                       ).collect::<Vec<String>>().join(" ");
+        let ship_ids = ships
+            .iter()
+            .map(|s| s.id.to_string())
+            .collect::<Vec<String>>()
+            .join(" ");
         logger.log(&format!("turn {}, my ships: {}", turn_number, ship_ids));
         let mut ships_to_order = vec![];
         for ship in ships {
@@ -44,7 +46,10 @@ fn main() {
         let mut remaining = ships_to_order.len();
         // are ships ever getting orders after the first go-around?
         while ships_to_order.len() > 0 {
-            logger.log(&format!("  Ships awaiting orders: {}", ships_to_order.len()));
+            logger.log(&format!(
+                "  Ships awaiting orders: {}",
+                ships_to_order.len()
+            ));
             ships_to_order.retain(|ship|
                 // Ignore ships that are docked or in the process of docking
                 if ship.docking_status != DockingStatus::UNDOCKED {
@@ -53,10 +58,14 @@ fn main() {
                 } else {
 
                     let mut planets_by_distance = game_map.all_planets().iter().collect::<Vec<&Planet>>();
-                    planets_by_distance.sort_by(|p1, p2| p1.distance_to(*ship).partial_cmp(&p2.distance_to(*ship)).unwrap());
+                    planets_by_distance.sort_by(|p1, p2|
+                                                p1.distance_to(*ship).partial_cmp(&p2.distance_to(*ship)).unwrap()
+                                                );
                     for planet in planets_by_distance.iter() {
                         // Skip a planet if I own it and it has no open docks
-                        if planet.is_owned() && (planet.owner.unwrap() == game.my_id as i32) && planet.open_docks() == 0 {
+                        if planet.is_owned()
+                            && (planet.owner.unwrap() == game.my_id as i32)
+                            && planet.open_docks() == 0 {
                             continue;
                         }
 
@@ -67,13 +76,18 @@ fn main() {
                             ship.command.set(Some(c));
                             return false
                         } else {
-                            let navigate_command: Option<Command> = ship.navigate(&ship.closest_point_to(*planet, 3.0), &game_map, MAX_CORRECTIONS);
+                            let navigate_command: Option<Command> = ship.navigate(
+                                &ship.closest_point_to(*planet, 3.0),
+                                &game_map,
+                                MAX_CORRECTIONS);
                             match navigate_command {
                                 Some(command) => {
                                     if let Command::Thrust(ship_id, magnitude, angle) = command {
                                         ship.velocity_x.set(magnitude as f64 * (angle as f64).to_radians().cos());
                                         ship.velocity_y.set(magnitude as f64 * (angle as f64).to_radians().sin());
-                                        logger.log(&format!("  ship {} : speed: {}, angle: {}", ship_id, magnitude, angle));
+                                        logger.log(&format!(
+                                                "  ship {} : speed: {}, angle: {}",
+                                                ship_id, magnitude, angle));
                                     }
                                     command_queue.push(command);
                                     ship.command.set(Some(command));
@@ -85,22 +99,22 @@ fn main() {
                         break;
                     }
                     true
-                }
-            );
+                });
             if ships_to_order.len() == remaining {
-                logger.log(&ships_to_order.iter().map(|s|
-                                                      format!("  ship {} received no command", s.id)
-                                                     ).collect::<Vec<String>>().join("\n"));
-                break
+                logger.log(&ships_to_order
+                    .iter()
+                    .map(|s| format!("  ship {} received no command", s.id))
+                    .collect::<Vec<String>>()
+                    .join("\n"));
+                break;
             } else {
                 remaining = ships_to_order.len()
             }
         }
-        // Send our commands to the game
-        // for c in &command_queue {
-        //     logger.log(&c.encode());
-        // }
         game.send_command_queue(command_queue);
-        logger.log(&format!("  turn time: {}", start_time.to(PreciseTime::now())));
+        logger.log(&format!(
+            "  turn time: {}",
+            start_time.to(PreciseTime::now())
+        ));
     }
 }

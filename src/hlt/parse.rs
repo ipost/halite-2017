@@ -83,7 +83,6 @@ impl<T: Decodable> Decodable for Option<T> {
     where
         I: Iterator<Item = &'a str>,
     {
-
         let present = bool::parse(tokens);
         let value = T::parse(tokens);
 

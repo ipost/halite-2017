@@ -18,7 +18,6 @@ impl Decodable for Player {
     where
         I: Iterator<Item = &'a str>,
     {
-
         let id = i32::parse(tokens);
         let ships = Vec::parse(tokens);
 

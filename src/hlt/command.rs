@@ -11,9 +11,7 @@ impl Command {
         return match self {
             &Command::Dock(ship, planet) => format!("d {} {}", ship, planet),
             &Command::Undock(ship) => format!("u {}", ship),
-            &Command::Thrust(ship, magnitude, angle) => {
-                format!("t {} {} {}", ship, magnitude, angle)
-            }
+            &Command::Thrust(ship, magnitude, angle) => format!("t {} {} {}", ship, magnitude, angle),
         };
     }
 }

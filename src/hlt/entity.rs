@@ -7,10 +7,10 @@ use std::fmt;
 use hlt::pathfind::avoid;
 use hlt::parse::Decodable;
 use hlt::command::Command;
-use hlt::constants::{DOCK_RADIUS, SHIP_RADIUS, MAX_SPEED, FUDGE};
+use hlt::constants::{DOCK_RADIUS, FUDGE, MAX_SPEED, SHIP_RADIUS};
 use hlt::player::Player;
 use hlt::game_map::GameMap;
-//use hlt::logging::Logger;
+// use hlt::logging::Logger;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Position(pub f64, pub f64);
@@ -26,7 +26,6 @@ impl Decodable for Position {
     where
         I: Iterator<Item = &'a str>,
     {
-
         let x = f64::parse(tokens);
         let y = f64::parse(tokens);
         return Position(x, y);
@@ -36,7 +35,7 @@ impl Decodable for Position {
 #[derive(Debug)]
 pub struct Obstacle {
     pub position: Position,
-    pub radius: f64
+    pub radius: f64,
 }
 
 #[derive(PartialEq, Debug)]
@@ -64,7 +63,6 @@ impl Decodable for DockingStatus {
     where
         I: Iterator<Item = &'a str>,
     {
-
         let i = i32::parse(tokens);
         return match i {
             0 => DockingStatus::UNDOCKED,
@@ -87,7 +85,7 @@ pub struct Ship {
     pub docked_planet: Option<i32>,
     pub progress: i32,
     pub cooldown: i32,
-    pub command: Cell<Option<Command>>
+    pub command: Cell<Option<Command>>,
 }
 
 impl Ship {
@@ -113,16 +111,20 @@ impl Ship {
     }
 
     pub fn navigate<T: Entity>(&self, target: &T, game_map: &GameMap, max_corrections: i32) -> Option<Command> {
-        //let mut logger = Logger::new(0);
+        // let mut logger = Logger::new(0);
         let speed = MAX_SPEED;
         let nav_radius = SHIP_RADIUS + FUDGE;
         let distance = self.distance_to(target);
-        let closest_stationary_obstacle: Option<Obstacle> = game_map.closest_stationary_obstacle(&self.get_position(), &target.get_position(), FUDGE);
+        let closest_stationary_obstacle: Option<Obstacle> =
+            game_map.closest_stationary_obstacle(&self.get_position(), &target.get_position(), FUDGE);
         let desired_trajectory = match closest_stationary_obstacle {
-            Some(obstacle) => {
-                avoid(self.get_position(), target.get_position(), obstacle.position, nav_radius + obstacle.radius)
-            },
-            None => {self.calculate_angle_between(target)}
+            Some(obstacle) => avoid(
+                self.get_position(),
+                target.get_position(),
+                obstacle.position,
+                nav_radius + obstacle.radius,
+            ),
+            None => self.calculate_angle_between(target),
         };
         let thrust_speed = min(speed, distance as i32);
         let velocity_x = thrust_speed as f64 * desired_trajectory.to_radians().cos();
@@ -130,13 +132,12 @@ impl Ship {
 
         let my_ships = game_map.get_me().all_ships();
         let will_collide = |v_x, v_y| -> bool {
-            //check enemy stationary ships? if not docked and more health?
+            // check enemy stationary ships? if not docked and more health?
             let thrust_end = Position(self.get_position().0 + v_x, self.get_position().1 + v_y);
             self.velocity_x.set(v_x);
             self.velocity_y.set(v_y);
             let step_count = 20;
-            let collide_with_ship: bool =
-                my_ships.iter()// only ships that could collide this turn need be checked
+            let collide_with_ship: bool = my_ships.iter()// only ships that could collide this turn need be checked
                 .filter(|other| other.id != self.id
                         && self.distance_to(*other) < FUDGE + (2f64 * (SHIP_RADIUS + MAX_SPEED as f64))
                         && other.is_undocked()
@@ -144,18 +145,23 @@ impl Ship {
                 .any(|other|
                       (1..(step_count+1)).collect::<Vec<i32>>().iter()
                       .any(|t|
-                           self.dist_to_at(other, (*t as f64 / step_count as f64).clone()) < (SHIP_RADIUS * 2f64) + FUDGE
+                           self.dist_to_at(other, (*t as f64 / step_count as f64).clone()) <
+                              (SHIP_RADIUS * 2f64) + FUDGE
                           )
                      );
             self.velocity_x.set(0f64);
             self.velocity_y.set(0f64);
-            if collide_with_ship { return true; }
+            if collide_with_ship {
+                return true;
+            }
 
-            game_map.closest_stationary_obstacle(&self.get_position(), &thrust_end, FUDGE).is_some()
+            game_map
+                .closest_stationary_obstacle(&self.get_position(), &thrust_end, FUDGE)
+                .is_some()
         };
 
         if !will_collide(velocity_x, velocity_y) {
-            return Some(self.thrust(thrust_speed, desired_trajectory as i32))
+            return Some(self.thrust(thrust_speed, desired_trajectory as i32));
         }
         let angular_step = 0.5;
         for i in 1..(max_corrections + 1) {
@@ -183,7 +189,6 @@ impl Decodable for Ship {
     where
         I: Iterator<Item = &'a str>,
     {
-
         let id = i32::parse(tokens);
         let position = Position::parse(tokens);
         let hp = i32::parse(tokens);
@@ -209,7 +214,7 @@ impl Decodable for Ship {
             docked_planet,
             progress,
             cooldown,
-            command
+            command,
         };
         return ship;
     }
@@ -248,7 +253,6 @@ impl Decodable for Planet {
     where
         I: Iterator<Item = &'a str>,
     {
-
         let id = i32::parse(tokens);
         let position = Position::parse(tokens);
         let hp = i32::parse(tokens);
@@ -284,7 +288,6 @@ impl Decodable for GameState {
     where
         I: Iterator<Item = &'a str>,
     {
-
         let players = Vec::parse(tokens);
         let planets = Vec::parse(tokens);
 
@@ -292,28 +295,28 @@ impl Decodable for GameState {
     }
 }
 
-pub trait Entity : Sized {
+pub trait Entity: Sized {
     fn get_position(&self) -> Position;
     fn get_position_at(&self, t: f64) -> Position;
     fn get_radius(&self) -> f64;
-    //fn clone(&self) -> Self where Self: Sized;
+    // fn clone(&self) -> Self where Self: Sized;
 
     fn distance_to<T: Entity>(&self, target: &T) -> f64 {
         let Position(x1, y1) = self.get_position();
         let Position(x2, y2) = target.get_position();
-        f64::sqrt((x2-x1).powi(2) + (y2-y1).powi(2))
+        f64::sqrt((x2 - x1).powi(2) + (y2 - y1).powi(2))
     }
 
     fn dist_to_at<T: Entity>(&self, target: &T, t: f64) -> f64 {
         let Position(x1, y1) = self.get_position_at(t);
         let Position(x2, y2) = target.get_position_at(t);
-        f64::sqrt((x2-x1).powi(2) + (y2-y1).powi(2))
+        f64::sqrt((x2 - x1).powi(2) + (y2 - y1).powi(2))
     }
 
     fn calculate_angle_between<T: Entity>(&self, target: &T) -> f64 {
         let Position(x1, y1) = self.get_position();
         let Position(x2, y2) = target.get_position();
-        (f64::atan2(y2-y1, x2-x1).to_degrees() + 360.0) % 360.0
+        (f64::atan2(y2 - y1, x2 - x1).to_degrees() + 360.0) % 360.0
     }
 
     fn closest_point_to<T: Entity>(&self, target: &T, min_distance: f64) -> Position {
@@ -328,16 +331,20 @@ pub trait Entity : Sized {
 }
 
 impl Entity for Ship {
-    fn get_position(&self) -> Position { self.position }
+    fn get_position(&self) -> Position {
+        self.position
+    }
 
     fn get_position_at(&self, t: f64) -> Position {
         Position(
             self.position.0 + (t * self.velocity_x.get()),
-            self.position.1 + (t * self.velocity_y.get())
-            )
+            self.position.1 + (t * self.velocity_y.get()),
+        )
     }
 
-    fn get_radius(&self) -> f64 { SHIP_RADIUS }
+    fn get_radius(&self) -> f64 {
+        SHIP_RADIUS
+    }
 }
 
 impl Entity for Planet {
@@ -367,4 +374,3 @@ impl Entity for Position {
         0.0
     }
 }
-
