@@ -126,7 +126,7 @@ impl Ship {
             ),
             None => self.calculate_angle_between(target),
         };
-        let thrust_speed = max(1, min(speed, distance as i32));
+        let thrust_speed = min(speed, distance as i32);
         let velocity_x = thrust_speed as f64 * desired_trajectory.to_radians().cos();
         let velocity_y = thrust_speed as f64 * desired_trajectory.to_radians().sin();
 

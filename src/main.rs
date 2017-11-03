@@ -68,6 +68,7 @@ fn main() {
                             continue;
                         }
 
+                        // need to not dock if other player will capture it first
                         if ship.in_dock_range(planet) && (!planet.is_owned() || (planet.owner.unwrap() == game.my_id as i32 && planet.open_docks() > 0)) {
                             let c = ship.dock(planet);
                             logger.log(&format!("  Ship {} docking to {}", ship.id, planet.id));
@@ -83,11 +84,14 @@ fn main() {
                             match navigate_command {
                                 Some(command) => {
                                     if let Command::Thrust(ship_id, magnitude, angle) = command {
+                                        if magnitude == 0 {
+                                            return true
+                                        }
                                         ship.velocity_x.set(magnitude as f64 * (angle as f64).to_radians().cos());
                                         ship.velocity_y.set(magnitude as f64 * (angle as f64).to_radians().sin());
                                         logger.log(&format!(
-                                                "  ship {} : speed: {}, angle: {}, target: {}",
-                                                ship_id, magnitude, angle, destination.as_string()));
+                                                "  ship {} : speed: {}, angle: {}, target: {}, target planet: {}",
+                                                ship_id, magnitude, angle, destination.as_string(), planet.id));
                                     }
                                     command_queue.push(command);
                                     ship.command.set(Some(command));
@@ -104,17 +108,21 @@ fn main() {
                                                );
                     for enemy_ship in closest_enemy_ships {
                         if !enemy_ship.is_undocked() {
+                            let destination = &ship.closest_point_to(enemy_ship, WEAPON_RADIUS / 2.0);
                             match ship.navigate(
-                                &ship.closest_point_to(enemy_ship, WEAPON_RADIUS / 2.0),
+                                destination,
                                 &game_map,
                                 MAX_CORRECTIONS) {
                                 Some(command) => {
                                     if let Command::Thrust(ship_id, magnitude, angle) = command {
+                                        if magnitude == 0 {
+                                            return true
+                                        }
                                         ship.velocity_x.set(magnitude as f64 * (angle as f64).to_radians().cos());
                                         ship.velocity_y.set(magnitude as f64 * (angle as f64).to_radians().sin());
                                         logger.log(&format!(
-                                                "  ship {} : speed: {}, angle: {}",
-                                                ship_id, magnitude, angle));
+                                                "  ship {} : speed: {}, angle: {}, target: {}, target ship: {}",
+                                                ship_id, magnitude, angle, destination.as_string(), enemy_ship.id));
                                     }
                                     command_queue.push(command);
                                     ship.command.set(Some(command));
