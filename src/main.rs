@@ -10,7 +10,8 @@ use hlt::entity::{Entity, DockingStatus, Planet, Ship};
 use hlt::game::Game;
 use hlt::logging::Logger;
 use hlt::command::Command;
-use std::collections::HashSet;
+extern crate time;
+use time::{PreciseTime};
 
 fn main() {
     // Initialize the game
@@ -23,13 +24,14 @@ fn main() {
     // For each turn
     let mut turn_number: usize = 0;
     loop {
+        let start_time = PreciseTime::now();
         turn_number = turn_number + 1;
         // Update the game state
         let game_map = game.update_map();
         let mut command_queue: Vec<Command> = Vec::new();
 
         // Loop over all of our player's ships
-        let ships = game_map.get_me().all_ships();
+        let ships: &Vec<Ship> = game_map.get_me().all_ships();
         let ship_ids = ships.iter().map(|s|
                                         s.id.to_string()
                                        ).collect::<Vec<String>>().join(" ");
@@ -48,7 +50,6 @@ fn main() {
                     return false;
                 } else {
 
-                    // Loop over all planets
                     let mut planets_by_distance = game_map.all_planets().iter().collect::<Vec<&Planet>>();
                     planets_by_distance.sort_by(|p1, p2| p1.distance_to(*ship).partial_cmp(&p2.distance_to(*ship)).unwrap());
                     for planet in planets_by_distance.iter() {
@@ -57,26 +58,23 @@ fn main() {
                             continue;
                         }
 
-                        //./halite_osx -d "180 180" -s 3288636877 "target/release/MyBot" "./VanillaSettler"
-                        // test with above seed to navigate to far planet
                         if ship.can_dock(planet) {
                             let c = ship.dock(planet);
                             logger.log(&format!("  Ship {} docking to {}", ship.id, planet.id));
-                            command_queue.push(c.clone());
+                            command_queue.push(c);
                             ship.command.set(Some(c));
                             return false
                         } else {
-                            let navigate_command: Option<Command> = ship.navigate(&ship.closest_point_to(*planet, 3.0), &game_map, 30);
+                            let navigate_command: Option<Command> = ship.navigate(&ship.closest_point_to(*planet, 3.0), &game_map, 60);
                             match navigate_command {
                                 Some(command) => {
                                     if let Command::Thrust(ship_id, magnitude, angle) = command {
                                         ship.velocity_x.set(magnitude as f64 * (angle as f64).to_radians().cos());
                                         ship.velocity_y.set(magnitude as f64 * (angle as f64).to_radians().sin());
-                                        //logger.log(&format!("{} : velocity: {}, {}", ship_id, ship.velocity_x.get(), ship.velocity_y.get()));
                                         logger.log(&format!("  ship {} : speed: {}, angle: {}", ship_id, magnitude, angle));
                                     }
-                                    ship.command.set(Some(command));
                                     command_queue.push(command);
+                                    ship.command.set(Some(command));
                                     return false
                                 },
                                 _ => {}
@@ -88,10 +86,9 @@ fn main() {
                 }
             );
             if ships_to_order.len() == remaining {
-                // no commands were issued, RIP
-                for ship in ships_to_order {
-                    logger.log(&format!("  ship {} received no command", ship.id));
-                }
+                logger.log(&ships_to_order.iter().map(|s|
+                                                      format!("  ship {} received no command", s.id)
+                                                     ).collect::<Vec<String>>().join("\n"));
                 break
             } else {
                 remaining = ships_to_order.len()
@@ -102,5 +99,6 @@ fn main() {
         //     logger.log(&c.encode());
         // }
         game.send_command_queue(command_queue);
+        logger.log(&format!("  turn time: {}", start_time.to(PreciseTime::now())));
     }
 }

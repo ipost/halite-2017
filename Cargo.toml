@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Isaac Post <post.isaac@gmail.com>", "Paul Butler <paul.butler@twosigma.com>"]
 
 [dependencies]
+time = "*"
 
 [[bin]]
 name = "MyBot"

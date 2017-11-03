@@ -3,7 +3,6 @@
 use std::cell::Cell;
 use std::cmp::min;
 use std::fmt;
-use std::hash::{Hash, Hasher};
 
 use hlt::pathfind::avoid;
 use hlt::parse::Decodable;
@@ -154,8 +153,7 @@ impl Ship {
         let colliding_entity: Option<Obstacle> = match colliding_ship {
             Some(c_s) => Some(c_s),
             None => {
-                //game_map.closest_stationary_obstacle(&self.get_position(), &target.get_position(), effective_planet_radius_modifier);
-                None
+                game_map.closest_stationary_obstacle(&self.get_position(), &thrust_end, effective_planet_radius_modifier)
             }
         };
 
@@ -164,11 +162,10 @@ impl Ship {
         // if collision with other ship X would happen and X is not docked/docking and X has
         // not yet gotten a move order for this turn, return None and try to calculate a new
         // move for self after X has been given orders
-        let angular_step = 1.0;
+        let angular_step = 0.5;
         match colliding_entity {
             Some(other_ship) => {
                 for i in 1..(max_corrections + 1) {
-                    // try adjusting left and right
                     for angular_offset in vec![i as f64 * angular_step, -1.0 * i as f64 * angular_step] {
                         let new_target_dx = f64::cos((angle + angular_offset).to_radians()) * distance;
                         let new_target_dy = f64::sin((angle + angular_offset).to_radians()) * distance;
@@ -196,14 +193,6 @@ impl Ship {
 impl PartialEq for Ship {
     fn eq(&self, other: &Ship) -> bool {
         self.id == other.id
-    }
-}
-
-impl Eq for Ship {}
-
-impl Hash for Ship {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
     }
 }
 
