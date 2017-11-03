@@ -1,10 +1,8 @@
 
-use hlt::entity::{Entity, Position, Ship};
-use hlt::command::Command;
-use hlt::constants::{SHIP_RADIUS};
-use hlt::game_map::GameMap;
+use hlt::entity::{Entity, Position};
+//use hlt::constants::{SHIP_RADIUS};
 use std::f64::consts::PI;
-use hlt::logging::Logger;
+//use hlt::logging::Logger;
 
 pub fn avoid(start: Position,
              destination: Position,
@@ -17,9 +15,9 @@ pub fn avoid(start: Position,
     // d = destination position
     // tan = position where trajectory is tangent to obstacle entering arc
     // tan2 = position where trajectory is tangent to obstacle leaving arc
-    let fudge = 0.05;
     let d_s_o = start.distance_to(&obstacle_pos);
-    let s_o_d_angle = three_point_angle(start, obstacle_pos, destination);
+    //let s_o_d_angle = three_point_angle(start, obstacle_pos, destination);
+
     //deal with case where ship is inside navigation radius
     let s_o_tan_angle = if obstacle_size > d_s_o {
         (1f64).acos()
@@ -46,6 +44,7 @@ pub fn avoid(start: Position,
     (angle.to_degrees() + 360.0) % 360.0
 }
 
+#[allow(dead_code)]
 pub fn three_point_angle(p1: Position, p2: Position, p3: Position) -> f64{
     let d12 = p1.distance_to(&p2);
     let d13 = p1.distance_to(&p3);

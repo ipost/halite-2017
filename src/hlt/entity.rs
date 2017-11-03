@@ -10,11 +10,12 @@ use hlt::command::Command;
 use hlt::constants::{DOCK_RADIUS, SHIP_RADIUS, MAX_SPEED, FUDGE};
 use hlt::player::Player;
 use hlt::game_map::GameMap;
-use hlt::logging::Logger;
+//use hlt::logging::Logger;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Position(pub f64, pub f64);
 impl Position {
+    #[allow(dead_code)]
     pub fn as_string(&self) -> String {
         format!("{}, {}", self.0, self.1)
     }
@@ -236,6 +237,7 @@ impl Planet {
         self.num_docking_spots as usize - self.docked_ships.len()
     }
 
+    #[allow(dead_code)]
     pub fn any_docked(&self) -> bool {
         self.docked_ships.len() > 0
     }
@@ -343,7 +345,7 @@ impl Entity for Planet {
         self.position
     }
 
-    fn get_position_at(&self, t: f64) -> Position {
+    fn get_position_at(&self, _t: f64) -> Position {
         self.position
     }
 
@@ -357,7 +359,7 @@ impl Entity for Position {
         *self
     }
 
-    fn get_position_at(&self, t: f64) -> Position {
+    fn get_position_at(&self, _t: f64) -> Position {
         *self
     }
 

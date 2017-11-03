@@ -4,7 +4,7 @@ use hlt::entity::{GameState, Planet, Position};
 use hlt::player::Player;
 use hlt::collision::intersect_segment_circle;
 use hlt::entity::{Entity, Ship, Obstacle};
-use hlt::logging::Logger;
+//use hlt::logging::Logger;
 use hlt::constants::{SHIP_RADIUS};
 
 pub struct GameMap<'a> {
