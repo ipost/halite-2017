@@ -2,8 +2,10 @@
 
 use std::cell::Cell;
 use std::cmp::min;
+use std::fmt;
+use std::hash::{Hash, Hasher};
 
-use hlt::pathfind::shorter_turn_around;
+use hlt::pathfind::avoid;
 use hlt::parse::Decodable;
 use hlt::command::Command;
 use hlt::constants::{DOCK_RADIUS, SHIP_RADIUS, MAX_SPEED};
@@ -31,12 +33,30 @@ impl Decodable for Position {
     }
 }
 
+#[derive(Debug)]
+pub struct Obstacle {
+    pub position: Position,
+    pub radius: f64
+}
+
 #[derive(PartialEq, Debug)]
 pub enum DockingStatus {
     UNDOCKED = 0,
     DOCKING = 1,
     DOCKED = 2,
     UNDOCKING = 3,
+}
+
+impl fmt::Display for DockingStatus {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let printable = match *self {
+            DockingStatus::UNDOCKED => "UNDOCKED",
+            DockingStatus::DOCKING => "DOCKING",
+            DockingStatus::DOCKED => "DOCKED",
+            DockingStatus::UNDOCKING => "UNDOCKING",
+        };
+        write!(f, "{}", printable)
+    }
 }
 
 impl Decodable for DockingStatus {
@@ -93,54 +113,77 @@ impl Ship {
     }
 
     pub fn navigate<T: Entity>(&self, target: &T, game_map: &GameMap, max_corrections: i32) -> Option<Command> {
-        if max_corrections <= 0 {
-            return None
-        }
-        let mut logger = Logger::new(0);// 0 is the bot at target/release/MyBot, player 0 when ./run_game.sh is used
-        let angular_step = 1.0;
+        let mut logger = Logger::new(0);
         let speed = MAX_SPEED;
-        let effective_planet_radius_modifier = 1.0;//SHIP_RADIUS + SHIP_RADIUS + DOCK_RADIUS; // path around ship docking zone
+        let fudge = 0.05;
+        let effective_planet_radius_modifier = 0.6;//SHIP_RADIUS + SHIP_RADIUS + DOCK_RADIUS; // path around ship docking zone
         let distance = self.distance_to(target);
-        let closest_planet = game_map.closest_planet(&self.get_position(), &target.get_position(), effective_planet_radius_modifier);
-        let angle = match closest_planet {
-            Some(planet) => {
-                //logger.log(&format!("  ship {} routing around: {}", self.id, planet.get_position().as_string()));
-                shorter_turn_around(self.get_position(), target.get_position(), planet.get_position(), effective_planet_radius_modifier + planet.get_radius())
+        let closest_stationary_obstacle: Option<Obstacle> = game_map.closest_stationary_obstacle(&self.get_position(), &target.get_position(), effective_planet_radius_modifier);
+        let angle = match closest_stationary_obstacle {
+            Some(obstacle) => {
+                //logger.log(&format!("  ship {} routing around: {}", self.id, obstacle.get_position().as_string()));
+                avoid(self.get_position(), target.get_position(), obstacle.position, effective_planet_radius_modifier + obstacle.radius)
             },
             None => {self.calculate_angle_between(target)}
         };
         let thrust_speed = min(speed, distance as i32);
         let velocity_x = thrust_speed as f64 * angle.to_radians().cos();
         let velocity_y = thrust_speed as f64 * angle.to_radians().sin();
+        let thrust_end = Position(self.get_position().0 + velocity_x, self.get_position().1 + velocity_y);
         self.velocity_x.set(velocity_x);
         self.velocity_y.set(velocity_y);
 
         let my_ships = game_map.get_me().all_ships();
-        let step_count = 10i32;
-        let colliding_ship =
+        let step_count = 20i32;
+        let colliding_ship: Option<&Ship> =
             my_ships.iter()// only ships that could collide this turn need be checked
-            .filter(|other| other.id != self.id &&
-                    self.distance_to(*other) < 2f64 * (SHIP_RADIUS + MAX_SPEED as f64) &&
-                    other.is_undocked())
+            .filter(|other| other.id != self.id
+                    && self.distance_to(*other) < 2f64 * (SHIP_RADIUS + MAX_SPEED as f64)
+                    //&& other.is_undocked()
+                   )
             .find(|other|
                   (1..(step_count+1)).collect::<Vec<i32>>().iter()
                   .any(|t|
-                       self.dist_to_at(*other, (*t as f64 / step_count as f64).clone()) < SHIP_RADIUS * 2f64
+                       self.dist_to_at(*other, (*t as f64 / step_count as f64).clone()) < (SHIP_RADIUS * 2f64) + fudge
                       )
                  );
+        let colliding_ship: Option<Obstacle> = match colliding_ship {
+            Some(s) => Some(Obstacle { radius: s.get_radius(), position: s.get_position() }),
+            None => None
+        };
+        let colliding_entity: Option<Obstacle> = match colliding_ship {
+            Some(c_s) => Some(c_s),
+            None => {
+                //game_map.closest_stationary_obstacle(&self.get_position(), &target.get_position(), effective_planet_radius_modifier);
+                None
+            }
+        };
 
         self.velocity_x.set(0f64);
         self.velocity_y.set(0f64);
         // if collision with other ship X would happen and X is not docked/docking and X has
         // not yet gotten a move order for this turn, return None and try to calculate a new
         // move for self after X has been given orders
-        match colliding_ship {
+        let angular_step = 1.0;
+        match colliding_entity {
             Some(other_ship) => {
-                let new_target_dx = f64::cos((angle + angular_step).to_radians()) * distance;
-                let new_target_dy = f64::sin((angle + angular_step).to_radians()) * distance;
-                let Position(self_x, self_y) = self.position;
-                let new_target = Position(self_x + new_target_dx, self_y + new_target_dy);
-                self.navigate(&new_target, game_map, max_corrections - 1)
+                for i in 1..(max_corrections + 1) {
+                    // try adjusting left and right
+                    for angular_offset in vec![i as f64 * angular_step, -1.0 * i as f64 * angular_step] {
+                        let new_target_dx = f64::cos((angle + angular_offset).to_radians()) * distance;
+                        let new_target_dy = f64::sin((angle + angular_offset).to_radians()) * distance;
+                        let Position(self_x, self_y) = self.position;
+                        let new_target = Position(self_x + new_target_dx, self_y + new_target_dy);
+                        match self.navigate(&new_target, game_map, 0) {
+                            Some(command) => {
+                                //logger.log(&format!("  ship {} turning by {} to avoid {}", self.id, angular_offset, other_ship.id));
+                                return Some(command)
+                            },
+                            None => {}
+                        }
+                    }
+                }
+                None
             },
             None => {
                 //logger.log(&format!("  angle: {}", angle as i32));
@@ -153,6 +196,14 @@ impl Ship {
 impl PartialEq for Ship {
     fn eq(&self, other: &Ship) -> bool {
         self.id == other.id
+    }
+}
+
+impl Eq for Ship {}
+
+impl Hash for Ship {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
     }
 }
 
