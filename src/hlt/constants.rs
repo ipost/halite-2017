@@ -23,3 +23,8 @@ pub const DOCK_TURNS: i32 = 5;
 pub const BASE_PRODUCTIVITY: i32 = 6;
 // Distance from the planets edge at which new ships are created
 pub const SPAWN_RADIUS: f64 = 2.0;
+
+
+// CONFIGURATIONS
+pub const MAX_CORRECTIONS: i32 = 120;
+pub const FUDGE: f64 = 0.05;

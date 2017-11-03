@@ -10,6 +10,7 @@ use hlt::entity::{Entity, DockingStatus, Planet, Ship};
 use hlt::game::Game;
 use hlt::logging::Logger;
 use hlt::command::Command;
+use hlt::constants::{MAX_CORRECTIONS};
 extern crate time;
 use time::{PreciseTime};
 
@@ -41,6 +42,7 @@ fn main() {
             ships_to_order.push(ship);
         }
         let mut remaining = ships_to_order.len();
+        // are ships ever getting orders after the first go-around?
         while ships_to_order.len() > 0 {
             logger.log(&format!("  Ships awaiting orders: {}", ships_to_order.len()));
             ships_to_order.retain(|ship|
@@ -65,7 +67,7 @@ fn main() {
                             ship.command.set(Some(c));
                             return false
                         } else {
-                            let navigate_command: Option<Command> = ship.navigate(&ship.closest_point_to(*planet, 3.0), &game_map, 60);
+                            let navigate_command: Option<Command> = ship.navigate(&ship.closest_point_to(*planet, 3.0), &game_map, MAX_CORRECTIONS);
                             match navigate_command {
                                 Some(command) => {
                                     if let Command::Thrust(ship_id, magnitude, angle) = command {

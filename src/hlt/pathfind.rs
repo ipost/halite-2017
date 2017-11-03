@@ -11,7 +11,7 @@ pub fn avoid(start: Position,
              obstacle_pos: Position,
              obstacle_size: f64
             ) -> f64 {
-    let mut logger = Logger::new(0);
+    //let mut logger = Logger::new(0);
     // s = start position
     // o = obstacle position
     // d = destination position
@@ -19,14 +19,14 @@ pub fn avoid(start: Position,
     // tan2 = position where trajectory is tangent to obstacle leaving arc
     let fudge = 0.05;
     let d_s_o = start.distance_to(&obstacle_pos);
-    let total_radius = if d_s_o < obstacle_size { // between obstacle and its effective radius
-        d_s_o
-    } else {
-        obstacle_size
-    };
     let s_o_d_angle = three_point_angle(start, obstacle_pos, destination);
-    let s_o_tan_angle = (total_radius / d_s_o).acos();
-    //logger.log(&format!("obstacle size: {}, distance to obst: {}, total_radius: {}, angle: {}", obstacle_size, d_s_o, total_radius, s_o_d_angle));
+    //deal with case where ship is inside navigation radius
+    let s_o_tan_angle = if obstacle_size > d_s_o {
+        (1f64).acos()
+    } else {
+        (obstacle_size / d_s_o).acos()
+    };
+    //logger.log(&format!("obstacle_size: {}, d_s_o: {}, s_o_tan_angle: {}, s_o_d_angle: {}", obstacle_size, d_s_o, s_o_tan_angle, s_o_d_angle));
     let turn_angle = (PI / 2f64) - s_o_tan_angle;
 
     let x_delt = destination.0 - start.0;
@@ -43,9 +43,7 @@ pub fn avoid(start: Position,
         } else {
             (angle_to_obstacle - turn_angle)
         };
-    //logger.log(&format!("shorter angle: {}, {}, {}", y_delt, x_delt, angle_to_obstacle));
-    let asdf = (angle.to_degrees() + 360.0) % 360.0;
-    asdf
+    (angle.to_degrees() + 360.0) % 360.0
 }
 
 pub fn three_point_angle(p1: Position, p2: Position, p3: Position) -> f64{
