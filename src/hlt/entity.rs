@@ -1,7 +1,7 @@
 
 
 use std::cell::Cell;
-use std::cmp::{min, max};
+use std::cmp::{max, min};
 use std::fmt;
 
 use hlt::pathfind::avoid;
@@ -108,6 +108,10 @@ impl Ship {
 
     pub fn is_undocked(&self) -> bool {
         self.docking_status == DockingStatus::UNDOCKED
+    }
+
+    pub fn commanded(&self) -> bool {
+        self.command.get().is_some()
     }
 
     pub fn navigate<T: Entity>(&self, target: &T, game_map: &GameMap, max_corrections: i32) -> Option<Command> {

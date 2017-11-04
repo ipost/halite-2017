@@ -4,6 +4,7 @@ pub enum Command {
     Dock(i32, i32),
     Undock(i32),
     Thrust(i32, i32, i32),
+    Stay(),
 }
 
 impl Command {
@@ -12,6 +13,7 @@ impl Command {
             &Command::Dock(ship, planet) => format!("d {} {}", ship, planet),
             &Command::Undock(ship) => format!("u {}", ship),
             &Command::Thrust(ship, magnitude, angle) => format!("t {} {} {}", ship, magnitude, angle),
+            &Command::Stay() => format!(""),
         };
     }
 }
