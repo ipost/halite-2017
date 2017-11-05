@@ -12,6 +12,7 @@ if ls *-*.log 1> /dev/null 2>&1; then
   rm -f *-*.log
 fi
 
-./halite_osx -d "180 180" -s 3288636877 "RUST_BACKTRACE=1 target/release/MyBot" "./VanillaSettler"
+./halite_osx -d "180 180" "RUST_BACKTRACE=1 target/release/MyBot" "./VanillaSettler"
+#./halite_osx -d "180 180" -s 3288636877 "RUST_BACKTRACE=1 target/release/MyBot" "./VanillaSettler"
 
 #./halite_osx -d "160 160" "target/release/MyBot" "./VanillaSettler"

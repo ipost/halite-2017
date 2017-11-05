@@ -32,7 +32,7 @@ fn main() {
         let mut command_queue: Vec<Command> = Vec::new();
 
         // Loop over all of our player's ships
-        let ships: &Vec<Ship> = game_map.get_me().all_ships();
+        let ships = game_map.get_me().all_ships();
         let ship_ids = ships
             .iter()
             .map(|s| s.id.to_string())
@@ -41,6 +41,7 @@ fn main() {
         logger.log(&format!("turn {}, my ships: {}", turn_number, ship_ids));
         let mut ships_to_order = vec![];
         for ship in ships {
+            // Ignore ships that are docked or in the process of (un)docking
             if ship.docking_status == DockingStatus::UNDOCKED {
                 ships_to_order.push(ship);
             } else {
@@ -53,46 +54,72 @@ fn main() {
             }
         }
         let mut remaining = ships_to_order.len();
+
+        let mut planets_to_dock: Vec<&Planet> = vec![];
+        for p in game_map.all_planets() {
+            planets_to_dock.push(p);
+        }
+        let mut planets_to_dock: Vec<&Planet> = planets_to_dock
+            .iter()
+            .filter(|p| {
+                !p.is_owned() || (p.is_owned() && p.owner.unwrap() == game.my_id as i32 && p.open_docks() > 0)
+            })
+            .map(|p| *p)
+            .collect();
+
+        let mut enemy_ships = game_map
+            .enemy_ships()
+            .iter()
+            .map(|s| *s)
+            .collect::<Vec<&Ship>>();
+
         // are ships ever getting orders after the first go-around?
         while ships_to_order.len() > 0 {
             logger.log(&format!(
                 "  Ships awaiting orders: {}",
                 ships_to_order.len()
             ));
+            // sort ships by their distance to their nearest dockable planet
+            if planets_to_dock.len() > 0 {
+                ships_to_order.sort_by(|s1, s2| {
+                    s1.distance_to({
+                        planets_to_dock.sort_by(|p1, p2| {
+                            s1.distance_to(*p1)
+                                .partial_cmp(&s1.distance_to(*p2))
+                                .unwrap()
+                        });
+                        *planets_to_dock.first().unwrap()
+                    }).partial_cmp(&s2.distance_to({
+                            planets_to_dock.sort_by(|p1, p2| {
+                                s2.distance_to(*p1)
+                                    .partial_cmp(&s2.distance_to(*p2))
+                                    .unwrap()
+                            });
+                            *planets_to_dock.first().unwrap()
+                        }))
+                        .unwrap()
+                });
+            }
+
             ships_to_order.retain(|ship| {
-                // Ignore ships that are docked or in the process of docking
                 let mut planets_by_distance = game_map.all_planets().iter().collect::<Vec<&Planet>>();
-                planets_by_distance.sort_by(|p1, p2| {
+                planets_to_dock.sort_by(|p1, p2| {
                     p1.distance_to(*ship)
                         .partial_cmp(&p2.distance_to(*ship))
                         .unwrap()
                 });
-                for planet in planets_by_distance.iter() {
-                    // Skip a planet if I own it and it has no open docks
-                    if planet.is_owned() && (planet.owner.unwrap() == game.my_id as i32) && planet.open_docks() == 0 {
+                for planet in planets_to_dock.iter() {
+                    if (planet.num_docking_spots - (planet.committed_ships.get() + planet.docked_ships.len() as i32))
+                        == 0
+                    {
                         continue;
                     }
-
-                    // skip planet unless it has open docks and it's mine or unowned
-                    if planet.is_owned() && (planet.owner.unwrap() != game.my_id as i32) {
-                        continue;
-                    }
-
-                    if ship.id == 13 {
-                        logger.log(&format!(
-                            "  planet_owner: {}, open docks: {}",
-                            match planet.owner {
-                                Some(o) => o,
-                                None => 999,
-                            },
-                            planet.open_docks()
-                        ));
-                    }
-                    // need to not dock if other player will capture it first
+                    // dock if possible
                     if ship.in_dock_range(planet)
                         && (!planet.is_owned()
                             || (planet.owner.unwrap() == game.my_id as i32 && planet.open_docks() > 0))
                     {
+                        planet.committed_ships.set(planet.committed_ships.get() + 1);
                         let c = ship.dock(planet);
                         logger.log(&format!("  Ship {} docking to {}", ship.id, planet.id));
                         command_queue.push(c);
@@ -120,50 +147,58 @@ fn main() {
                                         planet.id
                                     ));
                                 }
+                                planet.committed_ships.set(planet.committed_ships.get() + 1);
                                 command_queue.push(command);
                                 ship.command.set(Some(command));
                                 return false;
                             }
-                            _ => {}
+                            _ => {
+                                logger.log(&format!(
+                                    "failed to find path to planet {} for ship {}",
+                                    planet.id,
+                                    ship.id
+                                ));
+                            }
                         }
                     }
                     break;
                 }
-                let mut closest_enemy_ships = game_map.enemy_ships();
-                closest_enemy_ships.sort_by(|p1, p2| {
+
+                let mut enemy_ships = enemy_ships.iter().map(|s| *s).collect::<Vec<&Ship>>();
+                enemy_ships.sort_by(|p1, p2| {
                     p1.distance_to(*ship)
                         .partial_cmp(&p2.distance_to(*ship))
                         .unwrap()
                 });
-                for enemy_ship in closest_enemy_ships {
-                    if !enemy_ship.is_undocked() {
-                        let destination = &ship.closest_point_to(enemy_ship, WEAPON_RADIUS / 2.0);
-                        match ship.navigate(destination, &game_map, MAX_CORRECTIONS) {
-                            Some(command) => {
-                                if let Command::Thrust(ship_id, magnitude, angle) = command {
-                                    if magnitude == 0 {
-                                        return true;
-                                    }
-                                    ship.velocity_x
-                                        .set(magnitude as f64 * (angle as f64).to_radians().cos());
-                                    ship.velocity_y
-                                        .set(magnitude as f64 * (angle as f64).to_radians().sin());
-                                    logger.log(&format!(
-                                        "  ship {} : speed: {}, angle: {}, target: {}, target ship: {}",
-                                        ship_id,
-                                        magnitude,
-                                        angle,
-                                        destination.as_string(),
-                                        enemy_ship.id
-                                    ));
+                for enemy_ship in enemy_ships {
+                    // if !enemy_ship.is_undocked() {
+                    let destination = &ship.closest_point_to(enemy_ship, WEAPON_RADIUS / 2.0);
+                    match ship.navigate(destination, &game_map, MAX_CORRECTIONS) {
+                        Some(command) => {
+                            if let Command::Thrust(ship_id, magnitude, angle) = command {
+                                if magnitude == 0 {
+                                    return true;
                                 }
-                                command_queue.push(command);
-                                ship.command.set(Some(command));
-                                return false;
+                                ship.velocity_x
+                                    .set(magnitude as f64 * (angle as f64).to_radians().cos());
+                                ship.velocity_y
+                                    .set(magnitude as f64 * (angle as f64).to_radians().sin());
+                                logger.log(&format!(
+                                    "  ship {} : speed: {}, angle: {}, target: {}, target ship: {}",
+                                    ship_id,
+                                    magnitude,
+                                    angle,
+                                    destination.as_string(),
+                                    enemy_ship.id
+                                ));
                             }
-                            _ => {}
+                            command_queue.push(command);
+                            ship.command.set(Some(command));
+                            return false;
                         }
+                        _ => {}
                     }
+                    //}
                 }
                 true
             });

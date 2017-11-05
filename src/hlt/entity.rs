@@ -235,6 +235,7 @@ pub struct Planet {
     pub remaining_resources: i32,
     pub owner: Option<i32>,
     pub docked_ships: Vec<i32>,
+    pub committed_ships: Cell<i32>,
 }
 
 impl Planet {
@@ -266,6 +267,7 @@ impl Decodable for Planet {
         let remaining_resources = i32::parse(tokens);
         let owner = Option::parse(tokens);
         let docked_ships = Vec::parse(tokens);
+        let committed_ships = Cell::new(0);
 
         return Planet {
             id,
@@ -277,6 +279,7 @@ impl Decodable for Planet {
             remaining_resources,
             owner,
             docked_ships,
+            committed_ships,
         };
     }
 }
@@ -331,6 +334,20 @@ pub trait Entity: Sized {
 
         Position(x, y)
     }
+
+    /*
+    fn nearest_entity<T: Entity>(&self, entities: Vec<T>) -> T {
+        //let mut entities = entities.to_vec();
+        entities.sort_by(|e1, e2|
+                         (e1.distance_to(self) - e1.get_radius())
+                         .partial_cmp(
+                             &(e2.distance_to(self) - e2.get_radius())
+                             )
+                         .unwrap()
+                        );
+        *entities.first().unwrap()
+    }
+    */
 }
 
 impl Entity for Ship {
