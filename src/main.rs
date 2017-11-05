@@ -108,13 +108,13 @@ fn main() {
                         .partial_cmp(&p2.distance_to(*ship))
                         .unwrap()
                 });
+                // dock if possible
                 for planet in planets_to_dock.iter() {
                     if (planet.num_docking_spots - (planet.committed_ships.get() + planet.docked_ships.len() as i32))
                         == 0
                     {
                         continue;
                     }
-                    // dock if possible
                     if ship.in_dock_range(planet)
                         && (!planet.is_owned()
                             || (planet.owner.unwrap() == game.my_id as i32 && planet.open_docks() > 0))
@@ -125,40 +125,39 @@ fn main() {
                         command_queue.push(c);
                         ship.command.set(Some(c));
                         return false;
-                    } else {
-                        let destination = &ship.closest_point_to(*planet, 3.0);
-                        let navigate_command: Option<Command> = ship.navigate(destination, &game_map, MAX_CORRECTIONS);
-                        match navigate_command {
-                            Some(command) => {
-                                if let Command::Thrust(ship_id, magnitude, angle) = command {
-                                    if magnitude == 0 {
-                                        return true;
-                                    }
-                                    ship.velocity_x
-                                        .set(magnitude as f64 * (angle as f64).to_radians().cos());
-                                    ship.velocity_y
-                                        .set(magnitude as f64 * (angle as f64).to_radians().sin());
-                                    logger.log(&format!(
-                                        "  ship {} : speed: {}, angle: {}, target: {}, target planet: {}",
-                                        ship_id,
-                                        magnitude,
-                                        angle,
-                                        destination.as_string(),
-                                        planet.id
-                                    ));
+                    }
+                    let destination = &ship.closest_point_to(*planet, 3.0);
+                    let navigate_command: Option<Command> = ship.navigate(destination, &game_map, MAX_CORRECTIONS);
+                    match navigate_command {
+                        Some(command) => {
+                            if let Command::Thrust(ship_id, magnitude, angle) = command {
+                                if magnitude == 0 {
+                                    return true;
                                 }
-                                planet.committed_ships.set(planet.committed_ships.get() + 1);
-                                command_queue.push(command);
-                                ship.command.set(Some(command));
-                                return false;
-                            }
-                            _ => {
+                                ship.velocity_x
+                                    .set(magnitude as f64 * (angle as f64).to_radians().cos());
+                                ship.velocity_y
+                                    .set(magnitude as f64 * (angle as f64).to_radians().sin());
                                 logger.log(&format!(
-                                    "failed to find path to planet {} for ship {}",
-                                    planet.id,
-                                    ship.id
+                                    "  ship {} : speed: {}, angle: {}, target: {}, target planet: {}",
+                                    ship_id,
+                                    magnitude,
+                                    angle,
+                                    destination.as_string(),
+                                    planet.id
                                 ));
                             }
+                            planet.committed_ships.set(planet.committed_ships.get() + 1);
+                            command_queue.push(command);
+                            ship.command.set(Some(command));
+                            return false;
+                        }
+                        _ => {
+                            logger.log(&format!(
+                                "failed to find path to planet {} for ship {}",
+                                planet.id,
+                                ship.id
+                            ));
                         }
                     }
                     break;
