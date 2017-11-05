@@ -27,4 +27,4 @@ pub const SPAWN_RADIUS: f64 = 2.0;
 
 // CONFIGURATIONS
 pub const MAX_CORRECTIONS: i32 = 120;
-pub const FUDGE: f64 = 0.05;
+pub const FUDGE: f64 = 0.10;
