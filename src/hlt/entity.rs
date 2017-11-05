@@ -313,6 +313,12 @@ pub trait Entity: Sized {
         f64::sqrt((x2 - x1).powi(2) + (y2 - y1).powi(2))
     }
 
+    fn distance_to_surface<T: Entity>(&self, target: &T) -> f64 {
+        let Position(x1, y1) = self.get_position();
+        let Position(x2, y2) = target.get_position();
+        f64::sqrt((x2 - x1).powi(2) + (y2 - y1).powi(2)) - (self.get_radius() + target.get_radius())
+    }
+
     fn dist_to_at<T: Entity>(&self, target: &T, t: f64) -> f64 {
         let Position(x1, y1) = self.get_position_at(t);
         let Position(x2, y2) = target.get_position_at(t);

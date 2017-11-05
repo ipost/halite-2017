@@ -104,17 +104,20 @@ fn main() {
             ships_to_order.retain(|ship| {
                 let mut planets_by_distance = game_map.all_planets().iter().collect::<Vec<&Planet>>();
                 planets_to_dock.sort_by(|p1, p2| {
-                    p1.distance_to(*ship)
-                        .partial_cmp(&p2.distance_to(*ship))
+                    p1.distance_to_surface(*ship)
+                        .partial_cmp(&p2.distance_to_surface(*ship))
                         .unwrap()
                 });
-                // dock if possible
                 for planet in planets_to_dock.iter() {
+
+                    //continue if enough ships have been committed to fill all docks
                     if (planet.num_docking_spots - (planet.committed_ships.get() + planet.docked_ships.len() as i32))
                         == 0
                     {
                         continue;
                     }
+
+                    // dock if possible
                     if ship.in_dock_range(planet)
                         && (!planet.is_owned()
                             || (planet.owner.unwrap() == game.my_id as i32 && planet.open_docks() > 0))
@@ -126,6 +129,7 @@ fn main() {
                         ship.command.set(Some(c));
                         return false;
                     }
+
                     let destination = &ship.closest_point_to(*planet, 3.0);
                     let navigate_command: Option<Command> = ship.navigate(destination, &game_map, MAX_CORRECTIONS);
                     match navigate_command {
@@ -154,7 +158,7 @@ fn main() {
                         }
                         _ => {
                             logger.log(&format!(
-                                "failed to find path to planet {} for ship {}",
+                                "  --- failed to find path to planet {} for ship {}",
                                 planet.id,
                                 ship.id
                             ));
@@ -195,7 +199,13 @@ fn main() {
                             ship.command.set(Some(command));
                             return false;
                         }
-                        _ => {}
+                        _ => {
+                            logger.log(&format!(
+                                    "  --- failed to find path to ship {} for ship {}",
+                                    enemy_ship.id,
+                                    ship.id
+                                    ));
+                        }
                     }
                     //}
                 }
@@ -214,7 +224,7 @@ fn main() {
         }
         game.send_command_queue(command_queue);
         logger.log(&format!(
-            "  turn time: {}",
+            "  turn time: {}\n",
             start_time.to(PreciseTime::now())
         ));
     }
