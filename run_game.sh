@@ -15,11 +15,10 @@ fi
 #./halite_osx -d "180 180" "RUST_BACKTRACE=1 target/release/MyBot" "./ipostv1"
 #./halite_osx -d "180 180" "RUST_BACKTRACE=1 target/release/MyBot" "./VanillaSettler"
 
-#ships crash at planet 6 around turn 47
-#./halite_osx -d "180 180" -s 740233919 "RUST_BACKTRACE=1 target/release/MyBot" "./VanillaSettler"
+./halite_osx -d "420 420" -s 440097975 "RUST_BACKTRACE=1 target/release/MyBot" "./ipostv1"
 
-./halite_osx -d "336 224" "RUST_BACKTRACE=1 target/release/MyBot" "./ipostv1"
-#./halite_osx -d "180 180" -s 3288636877 "RUST_BACKTRACE=1 target/release/MyBot" "./VanillaSettler"
+# ship 75 around turn 72 stops despite thrust command
+#./halite_osx -d "336 224" -s 3644293869 "RUST_BACKTRACE=1 target/release/MyBot" "./ipostv1"
 
 #./halite_osx -d "160 160" "target/release/MyBot" "./VanillaSettler"
 mv replays/*.hlt .

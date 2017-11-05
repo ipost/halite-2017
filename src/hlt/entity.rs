@@ -165,16 +165,16 @@ impl Ship {
         };
 
         if !will_collide(velocity_x, velocity_y) {
-            return Some(self.thrust(thrust_speed, desired_trajectory as i32));
+            return Some(self.thrust(thrust_speed, (desired_trajectory as i32 + 360) % 360));
         }
-        let angular_step = 0.5;
+        let angular_step = 1.0;
         for i in 1..(max_corrections + 1) {
             for angular_offset in vec![i as f64 * angular_step, -1.0 * i as f64 * angular_step] {
                 let new_angle = desired_trajectory + angular_offset;
                 let velocity_x = thrust_speed as f64 * new_angle.to_radians().cos();
                 let velocity_y = thrust_speed as f64 * new_angle.to_radians().sin();
                 if !will_collide(velocity_x, velocity_y) {
-                    return Some(self.thrust(thrust_speed, new_angle as i32));
+                    return Some(self.thrust(thrust_speed, (new_angle as i32 + 360) % 360));
                 }
             }
         }
@@ -314,9 +314,7 @@ pub trait Entity: Sized {
     }
 
     fn distance_to_surface<T: Entity>(&self, target: &T) -> f64 {
-        let Position(x1, y1) = self.get_position();
-        let Position(x2, y2) = target.get_position();
-        f64::sqrt((x2 - x1).powi(2) + (y2 - y1).powi(2)) - (self.get_radius() + target.get_radius())
+        self.distance_to(target) - (self.get_radius() + target.get_radius())
     }
 
     fn dist_to_at<T: Entity>(&self, target: &T, t: f64) -> f64 {
