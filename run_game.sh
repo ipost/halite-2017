@@ -15,7 +15,7 @@ fi
 #./halite_osx -d "180 180" "RUST_BACKTRACE=1 target/release/MyBot" "./ipostv1"
 #./halite_osx -d "180 180" "RUST_BACKTRACE=1 target/release/MyBot" "./VanillaSettler"
 
-./halite_osx -d "150 150" "RUST_BACKTRACE=1 target/release/MyBot" "./ipostv1"
+./halite_osx -d "150 150" "RUST_BACKTRACE=1 target/release/MyBot" "./cheesebot"
 
 # ship 75 around turn 72 stops despite thrust command
 #./halite_osx -d "336 224" -s 3644293869 "RUST_BACKTRACE=1 target/release/MyBot" "./ipostv1"
