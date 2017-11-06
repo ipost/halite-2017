@@ -55,6 +55,8 @@ fn main() {
         }
         let mut remaining = ships_to_order.len();
 
+         prefer planets with at least 3 ports and farther from the enemy on turn one
+
         let mut planets_to_dock: Vec<&Planet> = vec![];
         for p in game_map.all_planets() {
             planets_to_dock.push(p);

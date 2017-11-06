@@ -78,6 +78,7 @@ impl Decodable for DockingStatus {
 pub struct Ship {
     pub id: i32,
     pub position: Position,
+    pub positions: Vec<Position>,
     pub hp: i32,
     pub velocity_x: Cell<f64>,
     pub velocity_y: Cell<f64>,
@@ -86,6 +87,7 @@ pub struct Ship {
     pub progress: i32,
     pub cooldown: i32,
     pub command: Cell<Option<Command>>,
+    !pub committed_ships: Cell<i32>,
 }
 
 impl Ship {
@@ -207,6 +209,7 @@ impl Decodable for Ship {
         let progress = i32::parse(tokens);
         let cooldown = i32::parse(tokens);
         let command = Cell::new(None);
+        let committed_ships = Cell::new(0);
 
         let ship = Ship {
             id,
@@ -219,6 +222,7 @@ impl Decodable for Ship {
             progress,
             cooldown,
             command,
+            committed_ships,
         };
         return ship;
     }
