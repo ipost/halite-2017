@@ -1,5 +1,6 @@
 *.swp
 *.swo
+.bot_tests
 replay*.hlt
 log_*.txt
 Halite*.app
