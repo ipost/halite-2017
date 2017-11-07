@@ -6,10 +6,11 @@
 
 mod hlt;
 
-use hlt::entity::{DockingStatus, Entity, Planet, Ship};
+use hlt::entity::{DockingStatus, Entity, Planet, Ship, GameState};
 use hlt::game::Game;
 use hlt::logging::Logger;
 use hlt::command::Command;
+use hlt::game_map::GameMap;
 use hlt::constants::{MAX_CORRECTIONS, WEAPON_RADIUS};
 extern crate time;
 use time::PreciseTime;
@@ -24,11 +25,13 @@ fn main() {
 
     // For each turn
     let mut turn_number: usize = 0;
+    let gs = GameState { players: vec![], planets: vec![] };
+    let mut game_map = GameMap::new(&game, gs);
     loop {
         let start_time = PreciseTime::now();
         turn_number = turn_number + 1;
         // Update the game state
-        let game_map = game.update_map();
+        game_map = game.update_map(game_map);
         let mut command_queue: Vec<Command> = Vec::new();
 
         // Loop over all of our player's ships
@@ -41,6 +44,7 @@ fn main() {
         logger.log(&format!("turn {}, my ships: {}", turn_number, ship_ids));
         let mut ships_to_order = vec![];
         for ship in ships {
+            // logger.log(&format!("ship {} is at {:?}", ship.id, ship.get_positions()));
             // Ignore ships that are docked or in the process of (un)docking
             if ship.docking_status == DockingStatus::UNDOCKED {
                 ships_to_order.push(ship);
@@ -61,6 +65,9 @@ fn main() {
         for p in game_map.all_planets() {
             planets_to_dock.push(p);
         }
+
+        // (planet, desirability)
+        // let mut planets_to_dock: Vec<(&Planet, f64)> = planets_to_dock
         let mut planets_to_dock: Vec<&Planet> = planets_to_dock
             .iter()
             .filter(|p| {
@@ -69,11 +76,15 @@ fn main() {
             .map(|p| *p)
             .collect();
 
-        let mut enemy_ships = game_map
+        // (ship, desirability)
+        // let mut enemy_ships: Vec<(&Ship, f64)> = game_map
+        let mut enemy_ships: Vec<&Ship> = game_map
             .enemy_ships()
             .iter()
             .map(|s| *s)
-            .collect::<Vec<&Ship>>();
+            .collect();
+
+        // TODO: implement focus-fire (move ship into range of only one enemy ship - especially docked)
 
         // are ships ever getting orders after the first go-around?
         while ships_to_order.len() > 0 {
@@ -166,7 +177,7 @@ fn main() {
                                         ship_id,
                                         magnitude,
                                         angle,
-                                        destination.as_string(),
+                                        destination,
                                         planet.id
                                     ));
                                 }
@@ -215,7 +226,7 @@ fn main() {
                                         ship_id,
                                         magnitude,
                                         angle,
-                                        destination.as_string(),
+                                        destination,
                                         enemy_ship.id
                                     ));
                                 }

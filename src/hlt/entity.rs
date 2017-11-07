@@ -15,9 +15,11 @@ use hlt::game_map::GameMap;
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Position(pub f64, pub f64);
 impl Position {
-    #[allow(dead_code)]
-    pub fn as_string(&self) -> String {
-        format!("{}, {}", self.0, self.1)
+}
+
+impl fmt::Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "({}, {})", self.0, self.1)
     }
 }
 
@@ -77,8 +79,7 @@ impl Decodable for DockingStatus {
 #[derive(Debug)]
 pub struct Ship {
     pub id: i32,
-    pub position: Position,
-    // pub positions: Vec<Position>,
+    pub positions: Vec<Position>,
     // TODO: ^^
     pub hp: i32,
     pub velocity_x: Cell<f64>,
@@ -116,6 +117,14 @@ impl Ship {
 
     pub fn commanded(&self) -> bool {
         self.command.get().is_some()
+    }
+
+    pub fn get_positions(&self) -> Vec<Position> {
+        self.positions.clone()
+    }
+
+    pub fn set_positions(&mut self, positions: Vec<Position>) {
+        self.positions = positions
     }
 
     pub fn navigate<T: Entity>(&self, target: &T, game_map: &GameMap, max_corrections: i32) -> Option<Command> {
@@ -198,7 +207,7 @@ impl Decodable for Ship {
         I: Iterator<Item = &'a str>,
     {
         let id = i32::parse(tokens);
-        let position = Position::parse(tokens);
+        let positions = vec![Position::parse(tokens)];
         let hp = i32::parse(tokens);
         let velocity_x = Cell::new(f64::parse(tokens));
         let velocity_y = Cell::new(f64::parse(tokens));
@@ -215,7 +224,7 @@ impl Decodable for Ship {
 
         let ship = Ship {
             id,
-            position,
+            positions,
             hp,
             velocity_x,
             velocity_y,
@@ -362,13 +371,13 @@ pub trait Entity: Sized {
 
 impl Entity for Ship {
     fn get_position(&self) -> Position {
-        self.position
+        *self.positions.last().unwrap()
     }
 
     fn get_position_at(&self, t: f64) -> Position {
         Position(
-            self.position.0 + (t * self.velocity_x.get()),
-            self.position.1 + (t * self.velocity_y.get()),
+            self.get_position().0 + (t * self.velocity_x.get()),
+            self.get_position().1 + (t * self.velocity_y.get()),
         )
     }
 

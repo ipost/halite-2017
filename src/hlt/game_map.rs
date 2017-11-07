@@ -9,7 +9,7 @@ use hlt::constants::SHIP_RADIUS;
 
 pub struct GameMap<'a> {
     game: &'a Game,
-    state: GameState,
+    pub state: GameState,
 }
 
 impl<'a> GameMap<'a> {

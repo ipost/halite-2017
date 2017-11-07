@@ -1,4 +1,5 @@
 
+use hlt::logging::Logger;
 use std::io::stdin;
 use hlt::parse::Decodable;
 use hlt::entity::GameState;
@@ -46,15 +47,41 @@ impl Game {
             map_width,
             map_height,
         };
-        game.update_map();
+        game.create_map();
         game
     }
 
-    pub fn update_map(&self) -> GameMap {
+    pub fn create_map(&self) -> GameMap {
         let line = Game::read_line();
         let parts = line.split_whitespace();
         let mut iter = parts.into_iter();
         let game_state = GameState::parse(&mut iter);
+        return GameMap::new(self, game_state);
+    }
+
+    pub fn update_map(&self, previous_map: GameMap) -> GameMap {
+        let line = Game::read_line();
+        let parts = line.split_whitespace();
+        let mut iter = parts.into_iter();
+        let mut game_state = GameState::parse(&mut iter);
+        if previous_map.state.players.len() > 0 {
+            for player in game_state.players.iter_mut() {
+                let previous_ships = previous_map.state.players[player.id as usize].all_ships();
+                for mut ship in player.ships.iter_mut() {
+                    let previous_ship = previous_ships.iter().find(|s| s.id == ship.id);
+                    match previous_ship {
+                        Some(previous_ship) => {
+                            let new_pos = ship.get_positions().pop().unwrap();
+                            let mut positions = previous_ship.get_positions();
+                            positions.push(new_pos);
+                            ship.set_positions(positions);
+                        },
+                        None => { //ship did not exist last turn
+                        }
+                    }
+                }
+            }
+        }
         return GameMap::new(self, game_state);
     }
 
