@@ -30,5 +30,5 @@ pub const SPAWN_RADIUS: f64 = 2.0;
 // CONFIGURATIONS
 pub const MAX_CORRECTIONS: i32 = 90;
 pub const FUDGE: f64 = 0.15;
-pub const ATTACK_PREFERENCE_2P: f64 = 1.00;
+pub const ATTACK_PREFERENCE_2P: f64 = 3.00;
 pub const ATTACK_PREFERENCE_4P: f64 = 1.00;

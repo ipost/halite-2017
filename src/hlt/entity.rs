@@ -273,6 +273,11 @@ impl Planet {
             (SHIP_COST - self.current_production) / (self.docked_ships.len() * 3) as i32
         }
     }
+
+    pub fn spawn_position(&self) -> Position {
+        // TODO: IMPLEMENT THIS
+        Position { 0: 0f64, 1: 0f64 }
+    }
 }
 
 impl Decodable for Planet {

@@ -11,14 +11,15 @@ use hlt::game::Game;
 use hlt::logging::Logger;
 use hlt::command::Command;
 use hlt::game_map::GameMap;
-use hlt::constants::{DOCK_RADIUS, MAX_CORRECTIONS, MAX_SPEED, WEAPON_RADIUS, ATTACK_PREFERENCE_2P, ATTACK_PREFERENCE_4P};
+use hlt::constants::{ATTACK_PREFERENCE_2P, ATTACK_PREFERENCE_4P, DOCK_RADIUS, MAX_CORRECTIONS, MAX_SPEED,
+                     WEAPON_RADIUS};
 extern crate time;
 use time::PreciseTime;
 use std::cmp::Ordering;
 
 fn main() {
     // Initialize the game
-    let bot_name = "memetron_420";
+    let bot_name = "memetron_420v3";
     let game = Game::new(bot_name);
     // Initialize logging
     let mut logger = Logger::new(game.my_id);
@@ -38,7 +39,7 @@ fn main() {
         game_map = game.update_map(game_map);
         let mut command_queue: Vec<Command> = Vec::new();
 
-        //set playercount-dependent params
+        // set playercount-dependent params
         let attack_preference = if game_map.state.players.len() > 2 {
             ATTACK_PREFERENCE_4P
         } else {
@@ -129,14 +130,20 @@ fn main() {
                         .partial_cmp(&p2.distance_to_surface(*ship))
                         .unwrap()
                 });
-                // sort by number of committed ships and then by distance -- probably not optimal
-                // as-is navigating to enemies very far away probably doesn't make sense. Won't do
+                // sort by number of committed ships and then by distance -- probably not
+                // optimal
+                // as-is navigating to enemies very far away probably doesn't make sense. Won't
+                // do
                 // anything until enemy_ship.committed_ships is incremented in the main loop
                 enemy_ships.sort_by(|s1, s2| {
-                    let commit_cmp = s1.committed_ships
-                        .get()
-                        .partial_cmp(&s2.committed_ships.get())
-                        .unwrap();
+                    let commit_cmp = if (s1.committed_ships.get() - s2.committed_ships.get()).abs() > 5 {
+                        s1.committed_ships
+                            .get()
+                            .partial_cmp(&s2.committed_ships.get())
+                            .unwrap()
+                    } else {
+                        Ordering::Equal
+                    };
                     match commit_cmp {
                         Ordering::Equal => s1.distance_to_surface(*ship)
                             .partial_cmp(&s2.distance_to_surface(*ship))
@@ -144,6 +151,12 @@ fn main() {
                         _ => commit_cmp,
                     }
                 });
+                // enemy_ships.sort_by(|s1, s2| {
+                //     (s1.distance_to_surface(*ship) * (s1.committed_ships.get() + 1) as f64)
+                // .partial_cmp(&(s2.distance_to_surface(*ship) *
+                // (s2.committed_ships.get() + 1) as f64))
+                //             .unwrap()
+                // });
                 let mut plnts_iter = planets_to_dock.iter();
                 let mut ships_iter = enemy_ships.iter();
                 let mut closest_planet = plnts_iter.next();
@@ -255,7 +268,9 @@ fn main() {
                                         enemy_ship.id
                                     ));
                                 }
-                                //enemy_ship.committed_ships.set(1 + enemy_ship.committed_ships.get());
+                                enemy_ship
+                                    .committed_ships
+                                    .set(1 + enemy_ship.committed_ships.get());
                                 command_queue.push(command);
                                 ship.command.set(Some(command));
                                 return false;
