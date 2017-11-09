@@ -4,6 +4,14 @@ use hlt::entity::{Entity, Position};
 use std::f64::consts::PI;
 // use hlt::logging::Logger;
 
+macro_rules! in_2pi (
+    ($angle:expr) => (($angle + (2f64 * PI)) % (2f64 * PI))
+    );
+
+macro_rules! in_360 (
+    ($angle:expr) => (($angle + 360.0) % 360.0)
+    );
+
 pub fn avoid(start: Position, destination: Position, obstacle_pos: Position, obstacle_size: f64) -> f64 {
     // let mut logger = Logger::new(0);
     // s = start position
@@ -26,11 +34,11 @@ pub fn avoid(start: Position, destination: Position, obstacle_pos: Position, obs
 
     let x_delt = destination.0 - start.0;
     let y_delt = destination.1 - start.1;
-    let angle_to_dest = y_delt.atan2(x_delt);
+    let angle_to_dest = in_2pi!(y_delt.atan2(x_delt));
 
     let x_delt = obstacle_pos.0 - start.0;
     let y_delt = obstacle_pos.1 - start.1;
-    let angle_to_obstacle = y_delt.atan2(x_delt);
+    let angle_to_obstacle = in_2pi!(y_delt.atan2(x_delt));
 
     let angle = if (angle_to_dest - (angle_to_obstacle + turn_angle)).abs()
         < (angle_to_dest - (angle_to_obstacle - turn_angle))
@@ -39,7 +47,7 @@ pub fn avoid(start: Position, destination: Position, obstacle_pos: Position, obs
     } else {
         (angle_to_obstacle - turn_angle)
     };
-    (angle.to_degrees() + 360.0) % 360.0
+    in_360!(angle.to_degrees())
 }
 
 #[allow(dead_code)]
