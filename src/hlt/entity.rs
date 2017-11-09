@@ -7,15 +7,14 @@ use std::fmt;
 use hlt::pathfind::avoid;
 use hlt::parse::Decodable;
 use hlt::command::Command;
-use hlt::constants::{DOCK_RADIUS, FUDGE, MAX_SPEED, SHIP_RADIUS};
+use hlt::constants::{DOCK_RADIUS, FUDGE, MAX_SPEED, SHIP_COST, SHIP_RADIUS};
 use hlt::player::Player;
 use hlt::game_map::GameMap;
 // use hlt::logging::Logger;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Position(pub f64, pub f64);
-impl Position {
-}
+impl Position {}
 
 impl fmt::Display for Position {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -265,6 +264,14 @@ impl Planet {
     #[allow(dead_code)]
     pub fn any_docked(&self) -> bool {
         self.docked_ships.len() > 0
+    }
+
+    pub fn turns_until_spawn(&self) -> i32 {
+        if self.docked_ships.len() == 0 {
+            999999
+        } else {
+            (SHIP_COST - self.current_production) / (self.docked_ships.len() * 3) as i32
+        }
     }
 }
 

@@ -18,7 +18,12 @@ SIZE_X=$((SIZE_Y * 3 / 2 ))
 #./halite_osx -d "180 180" "RUST_BACKTRACE=1 target/release/MyBot" "./ipostv1"
 #./halite_osx -d "180 180" "RUST_BACKTRACE=1 target/release/MyBot" "./VanillaSettler"
 
-./halite_osx -d "$SIZE_X $SIZE_Y" "RUST_BACKTRACE=1 target/release/MyBot" "./bots/ipostv2"
+#./halite_osx -d "345 230" -s 1137349230 "RUST_BACKTRACE=1 target/release/MyBot" "./bots/ipostv2"
+
+./halite_osx -d "256 171" -s 712670402 "./bots/cheesebot" "./bots/cheesebot"
+#inconsistent nav P1 vs P2 ^^
+
+#./halite_osx -d "$SIZE_X $SIZE_Y" "RUST_BACKTRACE=1 target/release/MyBot" "./bots/ipostv2"
 
 #./halite_osx -d "$(random_dimension) $(random_dimension)" "RUST_BACKTRACE=1 target/release/MyBot" "./bots/cheesebot"
 

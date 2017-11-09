@@ -75,8 +75,9 @@ impl Game {
                             let mut positions = previous_ship.get_positions();
                             positions.push(new_pos);
                             ship.set_positions(positions);
-                        },
-                        None => { //ship did not exist last turn
+                        }
+                        None => {
+                            // ship did not exist last turn
                         }
                     }
                 }
