@@ -2,14 +2,14 @@
 use hlt::entity::{Entity, Position};
 // use hlt::constants::{SHIP_RADIUS};
 use std::f64::consts::PI;
-// use hlt::logging::Logger;
+use hlt::logging::Logger;
 
 macro_rules! in_2pi (
     ($angle:expr) => (($angle + (2f64 * PI)) % (2f64 * PI))
     );
 
 macro_rules! in_360 (
-    ($angle:expr) => (($angle + 360.0) % 360.0)
+    ($angle:expr) => ($angle % 360.0)
     );
 
 pub fn avoid(start: Position, destination: Position, obstacle_pos: Position, obstacle_size: f64) -> f64 {
@@ -28,26 +28,34 @@ pub fn avoid(start: Position, destination: Position, obstacle_pos: Position, obs
     } else {
         (obstacle_size / d_s_o).acos()
     };
-    // logger.log(&format!("obstacle_size: {}, d_s_o: {}, s_o_tan_angle: {},
-    // s_o_d_angle: {}", obstacle_size, d_s_o, s_o_tan_angle, s_o_d_angle));
-    let turn_angle = (PI / 2f64) - s_o_tan_angle;
+    let s_o_tan_angle = s_o_tan_angle.to_degrees();
+    let turn_angle = 90.0 - s_o_tan_angle;
 
     let x_delt = destination.0 - start.0;
     let y_delt = destination.1 - start.1;
-    let angle_to_dest = in_2pi!(y_delt.atan2(x_delt));
+    let angle_to_dest = in_360!(y_delt.atan2(x_delt).to_degrees());
 
     let x_delt = obstacle_pos.0 - start.0;
     let y_delt = obstacle_pos.1 - start.1;
-    let angle_to_obstacle = in_2pi!(y_delt.atan2(x_delt));
+    let angle_to_obstacle = in_360!(y_delt.atan2(x_delt).to_degrees());
 
-    let angle = if (angle_to_dest - (angle_to_obstacle + turn_angle)).abs()
-        < (angle_to_dest - (angle_to_obstacle - turn_angle))
+    let thrust_angle = if angle_between(angle_to_dest, in_360!(angle_to_obstacle + turn_angle))
+        < angle_between(angle_to_dest, in_360!(angle_to_obstacle - turn_angle))
     {
         (angle_to_obstacle + turn_angle)
     } else {
         (angle_to_obstacle - turn_angle)
     };
-    in_360!(angle.to_degrees())
+    in_360!(thrust_angle)
+}
+
+fn angle_between(a1: f64, a2: f64) -> f64 {
+    let da = (a1 - a2).abs();
+    if da > 180.0 {
+        180.0 - da
+    } else {
+        da
+    }
 }
 
 #[allow(dead_code)]
