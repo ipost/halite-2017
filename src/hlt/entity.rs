@@ -366,19 +366,15 @@ pub trait Entity: Sized {
         Position(x, y)
     }
 
-    /*
-    fn nearest_entity<T: Entity>(&self, entities: Vec<T>) -> T {
-        //let mut entities = entities.to_vec();
-        entities.sort_by(|e1, e2|
-                         (e1.distance_to(self) - e1.get_radius())
-                         .partial_cmp(
-                             &(e2.distance_to(self) - e2.get_radius())
-                             )
-                         .unwrap()
-                        );
-        *entities.first().unwrap()
+    fn nearest_entity<'a, T: 'a + Entity>(&self, entities: &'a [&T]) -> &'a T {
+        entities.iter().min_by(|e1, e2|
+                               (e1.distance_to(self) - e1.get_radius())
+                               .partial_cmp(
+                                   &(e2.distance_to(self) - e2.get_radius())
+                                   )
+                               .unwrap()
+                              ).unwrap()
     }
-    */
 }
 
 impl Entity for Ship {

@@ -19,7 +19,7 @@ use std::cmp::Ordering;
 
 fn main() {
     // Initialize the game
-    let bot_name = "memetron_420v3";
+    let bot_name = "memetron_420v4";
     let game = Game::new(bot_name);
     // Initialize logging
     let mut logger = Logger::new(game.my_id);
@@ -104,24 +104,12 @@ fn main() {
             ));
             // sort ships by their distance to their nearest dockable planet
             if planets_to_dock.len() > 0 {
-                ships_to_order.sort_by(|s1, s2| {
-                    s1.distance_to({
-                        planets_to_dock.sort_by(|p1, p2| {
-                            s1.distance_to(*p1)
-                                .partial_cmp(&s1.distance_to(*p2))
-                                .unwrap()
-                        });
-                        *planets_to_dock.first().unwrap()
-                    }).partial_cmp(&s2.distance_to({
-                            planets_to_dock.sort_by(|p1, p2| {
-                                s2.distance_to(*p1)
-                                    .partial_cmp(&s2.distance_to(*p2))
-                                    .unwrap()
-                            });
-                            *planets_to_dock.first().unwrap()
-                        }))
-                        .unwrap()
-                });
+                ships_to_order.sort_by(|s1, s2|
+                                       s1.distance_to(s1.nearest_entity(planets_to_dock.as_slice()))
+                                       .partial_cmp(
+                                           &s2.distance_to(s2.nearest_entity(planets_to_dock.as_slice())))
+                                       .unwrap()
+                                      );
             }
 
             ships_to_order.retain(|ship| {
