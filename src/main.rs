@@ -73,8 +73,8 @@ fn main() {
             logger.log(&format!("turn {}, my ships: {}", turn_number, ship_ids));
         }
         let mut ships_to_order = vec![];
+        // Ignore ships that are docked or in the process of (un)docking
         for ship in ships {
-            // Ignore ships that are docked or in the process of (un)docking
             if ship.docking_status == DockingStatus::UNDOCKED {
                 ships_to_order.push(ship);
             } else {
@@ -89,12 +89,15 @@ fn main() {
         let mut remaining = ships_to_order.len();
 
         // TODO: prefer planets with at least 3 ports and farther from the enemy on
-        // turn one. Also consider how near other planets are--don't want to have nothing nearby
+        // turn one. Also consider how near other planets are--don't want to have
+        // nothing nearby
         // for quick expansion"
 
         // (planet, desirability)
         // let mut planets_to_dock: Vec<(&Planet, f64)> = planets_to_dock
-        let mut planets_to_dock: Vec<&Planet> = game_map.all_planets().iter()
+        let mut planets_to_dock: Vec<&Planet> = game_map
+            .all_planets()
+            .iter()
             .filter(|p| {
                 !p.is_owned() || (p.is_owned() && p.owner.unwrap() == game.my_id as i32 && p.open_docks() > 0)
             })
@@ -104,7 +107,10 @@ fn main() {
         // let mut enemy_ships: Vec<(&Ship, f64)> = game_map
         let mut enemy_ships: Vec<&Ship> = game_map.enemy_ships().iter().map(|s| *s).collect();
 
-        let mut targets: Targets = Targets { ships: enemy_ships, planets: planets_to_dock };
+        let mut targets: Targets = Targets {
+            ships: enemy_ships,
+            planets: planets_to_dock,
+        };
         // TODO: implement focus-fire (move ship into range of only one enemy ship -
         // especially docked)
 
@@ -116,12 +122,11 @@ fn main() {
             ));
             // sort ships by their distance to their nearest dockable planet
             if targets.planets.len() > 0 {
-                ships_to_order.sort_by(|s1, s2|
-                                       s1.distance_to(s1.nearest_entity(targets.planets.as_slice()))
-                                       .partial_cmp(
-                                           &s2.distance_to(s2.nearest_entity(targets.planets.as_slice())))
-                                       .unwrap()
-                                      );
+                ships_to_order.sort_by(|s1, s2| {
+                    s1.distance_to(s1.nearest_entity(targets.planets.as_slice()))
+                        .partial_cmp(&s2.distance_to(s2.nearest_entity(targets.planets.as_slice())))
+                        .unwrap()
+                });
             }
 
             ships_to_order.retain(|ship| {
@@ -198,27 +203,29 @@ fn main() {
                         }
 
                         let destination = &ship.closest_point_to(*planet, 3.0);
-                        let navigate_command: Option<Command> = ship.navigate(destination, &game_map, MAX_CORRECTIONS);
-                        match navigate_command {
-                            Some(command) => {
-                                if let Command::Thrust(ship_id, magnitude, angle) = command {
-                                    if magnitude == 0 {
-                                        closest_planet = plnts_iter.next();
-                                        continue;
-                                    }
-                                    ship.velocity_x
-                                        .set(magnitude as f64 * (angle as f64).to_radians().cos());
-                                    ship.velocity_y
-                                        .set(magnitude as f64 * (angle as f64).to_radians().sin());
-                                    logger.log(&format!(
-                                        "  ship {} : speed: {}, angle: {}, target: {}, target planet: {}",
-                                        ship_id,
-                                        magnitude,
-                                        angle,
-                                        destination,
-                                        planet.id
-                                    ));
+                        let (speed, angle) = ship.route_to(destination, &game_map);
+                        let speed_angle: Option<(i32, i32)> =
+                            ship.adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS);
+                        match speed_angle {
+                            Some((speed, angle)) => {
+                                // maybe not good. sometimes ships shouldn't move to stay near their target
+                                if speed == 0 {
+                                    closest_planet = plnts_iter.next();
+                                    continue;
                                 }
+                                let command = ship.thrust(speed, angle);
+                                ship.velocity_x
+                                    .set(speed as f64 * (angle as f64).to_radians().cos());
+                                ship.velocity_y
+                                    .set(speed as f64 * (angle as f64).to_radians().sin());
+                                logger.log(&format!(
+                                    "  ship {} : speed: {}, angle: {}, target: {}, target planet: {}",
+                                    ship.id,
+                                    speed,
+                                    angle,
+                                    destination,
+                                    planet.id
+                                ));
                                 planet.committed_ships.set(planet.committed_ships.get() + 1);
                                 command_queue.push(command);
                                 ship.command.set(Some(command));
@@ -246,28 +253,30 @@ fn main() {
                             ship.command.set(Some(Command::Stay()));
                             return false;
                         }
-                        match ship.navigate(destination, &game_map, MAX_CORRECTIONS) {
-                            Some(command) => {
-                                if let Command::Thrust(ship_id, magnitude, angle) = command {
-                                    if magnitude == 0 {
-                                        logger.log(&format!(
-                                            "This shouldn't happen. The ship should remain to attack instead if it's that close. I think?"
-                                        ));
-                                        // return true;
-                                    }
-                                    ship.velocity_x
-                                        .set(magnitude as f64 * (angle as f64).to_radians().cos());
-                                    ship.velocity_y
-                                        .set(magnitude as f64 * (angle as f64).to_radians().sin());
+                        let (speed, angle) = ship.route_to(destination, &game_map);
+                        let speed_angle: Option<(i32, i32)> =
+                            ship.adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS);
+                        match speed_angle {
+                            Some((speed, angle)) => {
+                                let command = ship.thrust(speed, angle);
+                                if speed == 0 {
                                     logger.log(&format!(
-                                        "  ship {} : speed: {}, angle: {}, target: {}, target ship: {}",
-                                        ship_id,
-                                        magnitude,
-                                        angle,
-                                        destination,
-                                        enemy_ship.id
+                                        "This shouldn't happen. The ship should remain to attack instead if it's that close. I think?"
                                     ));
+                                    // return true;
                                 }
+                                ship.velocity_x
+                                    .set(speed as f64 * (angle as f64).to_radians().cos());
+                                ship.velocity_y
+                                    .set(speed as f64 * (angle as f64).to_radians().sin());
+                                logger.log(&format!(
+                                    "  ship {} : speed: {}, angle: {}, target: {}, target ship: {}",
+                                    ship.id,
+                                    speed,
+                                    angle,
+                                    destination,
+                                    enemy_ship.id
+                                ));
                                 enemy_ship
                                     .committed_ships
                                     .set(1 + enemy_ship.committed_ships.get());
@@ -288,6 +297,7 @@ fn main() {
                 }
                 true
             });
+
             if ships_to_order.len() == remaining {
                 logger.log(&ships_to_order
                     .iter()
@@ -304,7 +314,7 @@ fn main() {
         }
         game.send_command_queue(command_queue);
         logger.log(&format!(
-            "  turn time: {}\n\n\n",
+            "  turn time: {}\n\n",
             start_time.to(PreciseTime::now())
         ));
     }

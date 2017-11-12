@@ -4,12 +4,17 @@ set -e
 cargo rustc --release -q -- -Awarnings
 cargo rustc --release -q -- -Awarnings -A dead_code
 
-[ -e log_0.txt ] && rm -f log_0.txt
+if ls log_*.txt 1> /dev/null 2>&1; then
+  rm -f log_*.txt
+fi
 if ls *.hlt 1> /dev/null 2>&1; then
   rm -f *.hlt
 fi
 if ls *-*.log 1> /dev/null 2>&1; then
   rm -f *-*.log
+fi
+if ls replays/*.hlt 1> /dev/null 2>&1; then
+  rm -f replays/*.hlt
 fi
 
 # print config constants
@@ -18,8 +23,8 @@ cat src/hlt/constants.rs | grep -A500 'CONFIGURATIONS' | tail -n+2
 FILENAME=.bot_tests
 [ -e $FILENAME ] && rm -f $FILENAME
 touch $FILENAME
-GAMES=90
-PARALLEL=15
+GAMES=200
+PARALLEL=20
 GAMES=$((GAMES / PARALLEL))
 
 #run $PARALLEL games at a time
@@ -32,8 +37,8 @@ do
       # largest board is 384 x 256, smallest is 240 x 160
       SIZE_Y=$(awk -v min=160 -v max=256 'BEGIN{srand(); print int(min+rand()*(max-min+1))}')
       SIZE_X=$((SIZE_Y * 3 / 2 ))
-      ./halite_osx -d "$SIZE_X $SIZE_Y" "./bots/ipostv2" "target/release/MyBot"  >> $FILENAME
-      #./halite_osx -d "$(random_dimension) $(random_dimension)" "RUST_BACKTRACE=1 target/release/MyBot" "./bots/ipostv2" "./bots/ipostv2" "./bots/ipostv2" >> $FILENAME &
+      ./halite_osx -d "$SIZE_X $SIZE_Y" "target/release/MyBot" "bots/ipostv3" >> $FILENAME
+      #./halite_osx -d "$(random_dimension) $(random_dimension)" "RUST_BACKTRACE=1 target/release/MyBot" "./bots/ipostv3" "./bots/ipostv3" "./bots/ipostv3" >> $FILENAME &
     done
   } &
 done
@@ -46,4 +51,4 @@ echo "Test time: $((END_TIME - START_TIME))s"
 
 echo "Player #0 won $(cat .bot_tests | grep "Player #0.\+came in rank #1" | wc -l) times out of $((GAMES * PARALLEL)) games"
 echo "Player #1 won $(cat .bot_tests | grep "Player #1.\+came in rank #1" | wc -l) times out of $((GAMES * PARALLEL)) games"
-echo "$(ls *-*.log | wc -l) Failures found"
+echo "$(ls *-*.log 2> /dev/null | wc -l) Failures found"

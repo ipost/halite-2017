@@ -10,7 +10,7 @@ use hlt::command::Command;
 use hlt::constants::{DOCK_RADIUS, FUDGE, MAX_SPEED, SHIP_COST, SHIP_RADIUS};
 use hlt::player::Player;
 use hlt::game_map::GameMap;
-// use hlt::logging::Logger;
+use hlt::logging::Logger;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Position(pub f64, pub f64);
@@ -126,7 +126,7 @@ impl Ship {
         self.positions = positions
     }
 
-    pub fn navigate<T: Entity>(&self, target: &T, game_map: &GameMap, max_corrections: i32) -> Option<Command> {
+    pub fn route_to<T: Entity>(&self, target: &T, game_map: &GameMap) -> (i32, i32) {
         // let mut logger = Logger::new(0);
         let speed = MAX_SPEED;
         let nav_radius = SHIP_RADIUS + FUDGE;
@@ -142,11 +142,26 @@ impl Ship {
             ),
             None => self.calculate_angle_between(target),
         };
-        let thrust_speed = min(speed, distance as i32);
-        let velocity_x = thrust_speed as f64 * desired_trajectory.to_radians().cos();
-        let velocity_y = thrust_speed as f64 * desired_trajectory.to_radians().sin();
+        let thrust_speed = min(speed, distance.round() as i32);
+        (
+            thrust_speed,
+            (desired_trajectory.round() as i32 + 360) % 360,
+        )
+    }
 
+    pub fn adjust_thrust(
+        &self,
+        game_map: &GameMap,
+        speed: i32,
+        angle: i32,
+        max_corrections: i32,
+    ) -> Option<(i32, i32)> {
+        // let mut logger = Logger::new(0);
+        let nav_radius = SHIP_RADIUS + FUDGE;
+        let velocity_x = speed as f64 * (angle as f64).to_radians().cos();
+        let velocity_y = speed as f64 * (angle as f64).to_radians().sin();
         let my_ships = game_map.get_me().all_ships();
+
         let will_collide = |v_x, v_y| -> bool {
             // check enemy stationary ships? if not docked and more health?
             let thrust_end = Position(self.get_position().0 + v_x, self.get_position().1 + v_y);
@@ -170,23 +185,22 @@ impl Ship {
             if collide_with_ship {
                 return true;
             }
-
             game_map
                 .closest_stationary_obstacle(&self.get_position(), &thrust_end, FUDGE)
                 .is_some()
         };
 
         if !will_collide(velocity_x, velocity_y) {
-            return Some(self.thrust(thrust_speed, (desired_trajectory as i32 + 360) % 360));
+            return Some((speed, (angle as i32 + 360) % 360));
         }
-        let angular_step = 1.0;
+        let angular_step = 1;
         for i in 1..(max_corrections + 1) {
-            for angular_offset in vec![i as f64 * angular_step, -1.0 * i as f64 * angular_step] {
-                let new_angle = desired_trajectory + angular_offset;
-                let velocity_x = thrust_speed as f64 * new_angle.to_radians().cos();
-                let velocity_y = thrust_speed as f64 * new_angle.to_radians().sin();
+            for angular_offset in vec![i * angular_step, -1 * i * angular_step] {
+                let new_angle = angle + angular_offset;
+                let velocity_x = speed as f64 * (new_angle as f64).to_radians().cos();
+                let velocity_y = speed as f64 * (new_angle as f64).to_radians().sin();
                 if !will_collide(velocity_x, velocity_y) {
-                    return Some(self.thrust(thrust_speed, (new_angle as i32 + 360) % 360));
+                    return Some((speed, (new_angle as i32 + 360) % 360));
                 }
             }
         }
@@ -367,13 +381,14 @@ pub trait Entity: Sized {
     }
 
     fn nearest_entity<'a, T: 'a + Entity>(&self, entities: &'a [&T]) -> &'a T {
-        entities.iter().min_by(|e1, e2|
-                               (e1.distance_to(self) - e1.get_radius())
-                               .partial_cmp(
-                                   &(e2.distance_to(self) - e2.get_radius())
-                                   )
-                               .unwrap()
-                              ).unwrap()
+        entities
+            .iter()
+            .min_by(|e1, e2| {
+                (e1.distance_to(self) - e1.get_radius())
+                    .partial_cmp(&(e2.distance_to(self) - e2.get_radius()))
+                    .unwrap()
+            })
+            .unwrap()
     }
 }
 
