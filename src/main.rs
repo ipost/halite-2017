@@ -17,6 +17,22 @@ extern crate time;
 use time::PreciseTime;
 use std::cmp::Ordering;
 
+struct Targets<'a> {
+    ships: Vec<&'a Ship>,
+    planets: Vec<&'a Planet>,
+}
+
+enum Target<'a> {
+    Ship(&'a Ship),
+    Planet(&'a Planet),
+}
+
+impl<'a> Targets<'a> {
+    pub fn closest<T: Entity>(&self, ent: T) -> Target {
+        Target::Ship(self.ships[0])
+    }
+}
+
 fn main() {
     // Initialize the game
     let bot_name = "memetron_420v4";
@@ -48,15 +64,16 @@ fn main() {
 
         // Loop over all of our player's ships
         let ships = game_map.get_me().all_ships();
-        let ship_ids = ships
-            .iter()
-            .map(|s| s.id.to_string())
-            .collect::<Vec<String>>()
-            .join(" ");
-        logger.log(&format!("turn {}, my ships: {}", turn_number, ship_ids));
+        {
+            let ship_ids = ships
+                .iter()
+                .map(|s| s.id.to_string())
+                .collect::<Vec<String>>()
+                .join(" ");
+            logger.log(&format!("turn {}, my ships: {}", turn_number, ship_ids));
+        }
         let mut ships_to_order = vec![];
         for ship in ships {
-            // logger.log(&format!("ship {} is at {:?}", ship.id, ship.get_positions()));
             // Ignore ships that are docked or in the process of (un)docking
             if ship.docking_status == DockingStatus::UNDOCKED {
                 ships_to_order.push(ship);
@@ -72,48 +89,43 @@ fn main() {
         let mut remaining = ships_to_order.len();
 
         // TODO: prefer planets with at least 3 ports and farther from the enemy on
-        // turn one
-
-        let mut planets_to_dock: Vec<&Planet> = vec![];
-        for p in game_map.all_planets() {
-            planets_to_dock.push(p);
-        }
+        // turn one. Also consider how near other planets are--don't want to have nothing nearby
+        // for quick expansion"
 
         // (planet, desirability)
         // let mut planets_to_dock: Vec<(&Planet, f64)> = planets_to_dock
-        let mut planets_to_dock: Vec<&Planet> = planets_to_dock
-            .iter()
+        let mut planets_to_dock: Vec<&Planet> = game_map.all_planets().iter()
             .filter(|p| {
                 !p.is_owned() || (p.is_owned() && p.owner.unwrap() == game.my_id as i32 && p.open_docks() > 0)
             })
-            .map(|p| *p)
             .collect();
 
         // (ship, desirability)
         // let mut enemy_ships: Vec<(&Ship, f64)> = game_map
         let mut enemy_ships: Vec<&Ship> = game_map.enemy_ships().iter().map(|s| *s).collect();
 
+        let mut targets: Targets = Targets { ships: enemy_ships, planets: planets_to_dock };
         // TODO: implement focus-fire (move ship into range of only one enemy ship -
         // especially docked)
 
         // are ships ever getting orders after the first go-around?
         while ships_to_order.len() > 0 {
             logger.log(&format!(
-                "  Ships awaiting orders: {}",
+                "> Ships awaiting orders: {}",
                 ships_to_order.len()
             ));
             // sort ships by their distance to their nearest dockable planet
-            if planets_to_dock.len() > 0 {
+            if targets.planets.len() > 0 {
                 ships_to_order.sort_by(|s1, s2|
-                                       s1.distance_to(s1.nearest_entity(planets_to_dock.as_slice()))
+                                       s1.distance_to(s1.nearest_entity(targets.planets.as_slice()))
                                        .partial_cmp(
-                                           &s2.distance_to(s2.nearest_entity(planets_to_dock.as_slice())))
+                                           &s2.distance_to(s2.nearest_entity(targets.planets.as_slice())))
                                        .unwrap()
                                       );
             }
 
             ships_to_order.retain(|ship| {
-                planets_to_dock.sort_by(|p1, p2| {
+                targets.planets.sort_by(|p1, p2| {
                     p1.distance_to_surface(*ship)
                         .partial_cmp(&p2.distance_to_surface(*ship))
                         .unwrap()
@@ -123,7 +135,7 @@ fn main() {
                 // as-is navigating to enemies very far away probably doesn't make sense. Won't
                 // do
                 // anything until enemy_ship.committed_ships is incremented in the main loop
-                enemy_ships.sort_by(|s1, s2| {
+                targets.ships.sort_by(|s1, s2| {
                     let commit_cmp = if (s1.committed_ships.get() - s2.committed_ships.get()).abs() > 5 {
                         s1.committed_ships
                             .get()
@@ -145,8 +157,8 @@ fn main() {
                 // (s2.committed_ships.get() + 1) as f64))
                 //             .unwrap()
                 // });
-                let mut plnts_iter = planets_to_dock.iter();
-                let mut ships_iter = enemy_ships.iter();
+                let mut plnts_iter = targets.planets.iter();
+                let mut ships_iter = targets.ships.iter();
                 let mut closest_planet = plnts_iter.next();
                 let mut closest_e_ship = ships_iter.next();
                 // TODO: maybe use distance_around_obstacle
