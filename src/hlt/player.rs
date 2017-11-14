@@ -11,6 +11,10 @@ impl Player {
     pub fn all_ships(&self) -> &Vec<Ship> {
         &self.ships
     }
+
+    pub fn owns_ship(&self, ship_id: i32) -> bool {
+        self.ships.iter().any(|s| s.id == ship_id)
+    }
 }
 
 impl Decodable for Player {
