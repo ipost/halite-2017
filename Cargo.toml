@@ -5,6 +5,7 @@ authors = ["Isaac Post <post.isaac@gmail.com>", "Paul Butler <paul.butler@twosig
 
 [dependencies]
 time = "*"
+clippy = {version = "*", optional = true}
 
 [[bin]]
 name = "MyBot"
