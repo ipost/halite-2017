@@ -45,18 +45,25 @@ impl<'a> Targets<'a> {
 #[derive(Debug)]
 enum Move<'a> {
     DockMove(&'a Planet, f64),
-    AttackMove(&'a Ship, f64),
+    RaidMove(&'a Ship, f64),
     DefendMove(&'a Ship, f64),
-    NullMove(),
 }
 
 impl<'a> Move<'a> {
     pub fn value(&self) -> f64 {
         match self {
             &Move::DockMove(p, d) => d,
-            &Move::AttackMove(s, d) => d,
+            &Move::RaidMove(s, d) => d,
             &Move::DefendMove(s, d) => d,
-            _ => assert_unreachable!(),
+        }
+    }
+
+    pub fn commitment(&self) -> i32 {
+        match self {
+            //&Move::DockMove(p, d) => p.committed_ships.get(),
+            &Move::DockMove(p, d) => 0,
+            &Move::RaidMove(s, d) => s.committed_ships.get(),
+            &Move::DefendMove(s, d) => s.committed_ships.get(),
         }
     }
 }
@@ -65,59 +72,156 @@ impl<'a> Move<'a> {
 struct ShipMoves<'a> {
     ship: &'a Ship,
     dock_moves: Vec<Move<'a>>,
-    attack_moves: Vec<Move<'a>>,
+    raid_moves: Vec<Move<'a>>,
     defend_moves: Vec<Move<'a>>,
-    best_move: Move<'a>,
+    best_move: usize,
 }
 
 impl<'a> ShipMoves<'a> {
     // moves must be sorted by value within their type
-    fn update_best_move(&mut self) {
-        let best_move = {
+    pub fn update_best_move(&mut self) {
+        match self.best_move {
+            0 => self.dock_moves.remove(0),
+            1 => self.raid_moves.remove(0),
+            2 => self.defend_moves.remove(0),
+            _ => assert_unreachable!(),
+        };
+        self.refresh_best_move();
+    }
+
+    pub fn refresh_best_move(&mut self) {
+        self.sort_moves();
+        self.best_move = {
             let mut moves: Vec<Option<&Move>> = Vec::with_capacity(3);
             moves.push(self.dock_moves.first());
-            moves.push(self.attack_moves.first());
+            moves.push(self.raid_moves.first());
             moves.push(self.defend_moves.first());
+
+            let max_ship_commitment_disparity = 1;
             let best_move = moves
                 .into_iter()
                 .filter(|m| m.is_some())
                 .map(|m| m.unwrap())
-                .min_by(|m1, m2| m1.value().partial_cmp(&m2.value()).unwrap())
-                .unwrap();
-            match best_move {
+                .min_by(|move1, move2| {
+                    let commit_cmp = if (move1.commitment() - move2.commitment()).abs()
+                        >= max_ship_commitment_disparity
+                        {
+                            move1
+                                .commitment()
+                                .partial_cmp(&move2.commitment())
+                                .unwrap()
+                        } else {
+                            Ordering::Equal
+                        };
+                    match commit_cmp {
+                        Ordering::Equal => move1.value().partial_cmp(&move2.value()).unwrap(),
+                        _ => commit_cmp,
+                    }
+                });
+
+            match best_move.unwrap() {
                 &Move::DockMove(p, d) => 0,
-                &Move::AttackMove(s, d) => 1,
+                &Move::RaidMove(s, d) => 1,
                 &Move::DefendMove(s, d) => 2,
-                _ => assert_unreachable!(),
             }
         };
-        self.best_move = match best_move {
-            0 => self.dock_moves.remove(0),
-            1 => self.attack_moves.remove(0),
-            2 => self.defend_moves.remove(0),
-            _ => assert_unreachable!(),
-        };
+    }
+
+    fn sort_moves(&mut self) {
+        self.dock_moves.sort_by(|dock_move1, dock_move2| {
+            match dock_move1 {
+                &Move::DockMove(p, d) => d,
+                _ => assert_unreachable!(),
+            }.partial_cmp(&match dock_move2 {
+                &Move::DockMove(p, d) => d,
+                _ => assert_unreachable!(),
+            })
+            .unwrap()
+        });
+
+        // sort by commitment and then value
+        // !!! commitment sort does not work across move types because value does not
+        // change
+        let max_ship_commitment_disparity = 1;
+        self.raid_moves.sort_by(|raid_move1, raid_move2| {
+            let (ship1, v1) = match raid_move1 {
+                &Move::RaidMove(s, v) => (s, v),
+                _ => assert_unreachable!(),
+            };
+            let (ship2, v2) = match raid_move2 {
+                &Move::RaidMove(s, v) => (s, v),
+                _ => assert_unreachable!(),
+            };
+            let commit_cmp = if (ship1.committed_ships.get() - ship2.committed_ships.get()).abs()
+                >= max_ship_commitment_disparity
+                {
+                    ship1
+                        .committed_ships
+                        .get()
+                        .partial_cmp(&ship2.committed_ships.get())
+                        .unwrap()
+                } else {
+                    Ordering::Equal
+                };
+            match commit_cmp {
+                Ordering::Equal => v1.partial_cmp(&v2).unwrap(),
+                _ => commit_cmp,
+            }
+        });
+        self.defend_moves.sort_by(|defend_move1, defend_move2| {
+            let (ship1, v1) = match defend_move1 {
+                &Move::DefendMove(s, v) => (s, v),
+                _ => assert_unreachable!(),
+            };
+            let (ship2, v2) = match defend_move2 {
+                &Move::DefendMove(s, v) => (s, v),
+                _ => assert_unreachable!(),
+            };
+            let commit_cmp = if (ship1.committed_ships.get() - ship2.committed_ships.get()).abs()
+                > max_ship_commitment_disparity
+                {
+                    ship1
+                        .committed_ships
+                        .get()
+                        .partial_cmp(&ship2.committed_ships.get())
+                        .unwrap()
+                } else {
+                    Ordering::Equal
+                };
+            match commit_cmp {
+                Ordering::Equal => v1.partial_cmp(&v2).unwrap(),
+                _ => commit_cmp,
+            }
+        });
     }
 
     pub fn remaining_moves(&self) -> usize {
-        self.dock_moves.len() + self.attack_moves.len() + self.defend_moves.len()
+        self.dock_moves.len() + self.raid_moves.len() + self.defend_moves.len()
     }
 
-    pub fn best_move_value(&self) -> f64 {
-        self.best_move.value()
+    pub fn best_move(&self) -> &Move {
+        match self.best_move {
+            0 => self.dock_moves.first().unwrap(),
+            1 => self.raid_moves.first().unwrap(),
+            2 => self.defend_moves.first().unwrap(),
+            _ => assert_unreachable!(),
+        }
     }
 
-    // pub fn best_move<'b>(&'b self) -> &'b Move {
-    //     match self.best_move {
-    //         Some(m) => &m,
-    //         None => assert_unreachable!(),
-    //     }
-    // }
+    pub fn as_string(&self) -> String {
+        format!("
+ShipMoves {{
+    ship_id: {}
+    best_move: {:#?}
+    }}",
+    self.ship.id,
+    self.best_move())
+    }
 }
 
 fn main() {
     // Initialize the game
-    let bot_name = "memetron_420v4";
+    let bot_name = "memetron_420v5";
     let game = Game::new(bot_name);
     // Initialize logging
     let mut logger = Logger::new(game.my_id);
@@ -220,10 +324,10 @@ fn main() {
                     .iter()
                     .map(|p| Move::DockMove(*p, dock_preference * ship.dock_value(p)))
                     .collect();
-                let mut attack_moves: Vec<Move> = enemy_docked_ships
+                let mut raid_moves: Vec<Move> = enemy_docked_ships
                     .iter()
                     .map(|enemy_ship| {
-                        Move::AttackMove(
+                        Move::RaidMove(
                             *enemy_ship,
                             attack_preference * ship.attack_value(enemy_ship),
                         )
@@ -238,97 +342,37 @@ fn main() {
                         )
                     })
                     .collect();
-                dock_moves.sort_by(|dock_move1, dock_move2| {
-                    match dock_move1 {
-                        &Move::DockMove(p, d) => d,
-                        _ => assert_unreachable!(),
-                    }.partial_cmp(&match dock_move2 {
-                        &Move::DockMove(p, d) => d,
-                        _ => assert_unreachable!(),
-                    })
-                        .unwrap()
-                });
 
-                // sort by commitment and then value
-                let max_ship_commitment_disparity = 1;
-                attack_moves.sort_by(|attack_move1, attack_move2| {
-                    let (ship1, v1) = match attack_move1 {
-                        &Move::AttackMove(s, v) => (s, v),
-                        _ => assert_unreachable!(),
-                    };
-                    let (ship2, v2) = match attack_move2 {
-                        &Move::AttackMove(s, v) => (s, v),
-                        _ => assert_unreachable!(),
-                    };
-                    let commit_cmp = if (ship1.committed_ships.get() - ship2.committed_ships.get()).abs()
-                        > max_ship_commitment_disparity
-                    {
-                        ship1
-                            .committed_ships
-                            .get()
-                            .partial_cmp(&ship2.committed_ships.get())
-                            .unwrap()
-                    } else {
-                        Ordering::Equal
-                    };
-                    match commit_cmp {
-                        Ordering::Equal => v1.partial_cmp(&v2).unwrap(),
-                        _ => commit_cmp,
-                    }
-                });
-                defend_moves.sort_by(|defend_move1, defend_move2| {
-                    let (ship1, v1) = match defend_move1 {
-                        &Move::DefendMove(s, v) => (s, v),
-                        _ => assert_unreachable!(),
-                    };
-                    let (ship2, v2) = match defend_move2 {
-                        &Move::DefendMove(s, v) => (s, v),
-                        _ => assert_unreachable!(),
-                    };
-                    let commit_cmp = if (ship1.committed_ships.get() - ship2.committed_ships.get()).abs()
-                        > max_ship_commitment_disparity
-                    {
-                        ship1
-                            .committed_ships
-                            .get()
-                            .partial_cmp(&ship2.committed_ships.get())
-                            .unwrap()
-                    } else {
-                        Ordering::Equal
-                    };
-                    match commit_cmp {
-                        Ordering::Equal => v1.partial_cmp(&v2).unwrap(),
-                        _ => commit_cmp,
-                    }
-                });
-
-                let best_move = Move::NullMove();
+                let best_move = 4;
                 let mut s_m = ShipMoves {
                     ship,
                     dock_moves,
-                    attack_moves,
+                    raid_moves,
                     defend_moves,
                     best_move,
                 };
-                s_m.update_best_move();
+                s_m.refresh_best_move();
                 s_m
             })
             .collect();
 
+        // a ShipMove is a ship plus all of its possible moves and its best move
         let mut all_ship_moves = all_ship_moves;
 
-        // a ShipMove is a ship plus all of its possible moves and its best move
         while all_ship_moves.len() > 0 {
-            // find the current ship which has the best move to make
+
+            for s_m in all_ship_moves.iter_mut() {
+                s_m.refresh_best_move();
+            }
 
             let (ship_id, command) = {
+                // find the current ship which has the best move to make
                 let ship_to_move = all_ship_moves
                     .iter()
                     .filter(|s_m| s_m.remaining_moves() > 1)
                     .min_by(|s_m1, s_m2| {
-                        s_m1.best_move
-                            .value()
-                            .partial_cmp(&s_m2.best_move.value())
+                        s_m1.best_move().value()
+                            .partial_cmp(&s_m2.best_move().value())
                             .unwrap()
                     });
                 if ship_to_move.is_none() {
@@ -337,10 +381,7 @@ fn main() {
                 }
                 let mut ship_to_move = ship_to_move.unwrap();
                 let ship = ship_to_move.ship;
-                if ship.id == 45 && turn_number == 56 {
-                    logger.log(&format!("{:#?}", ship_to_move.best_move));
-                }
-                match &ship_to_move.best_move {
+                match ship_to_move.best_move() {
                     &Move::DockMove(planet, d) => {
                         // if all dock spots are claimed no command
                         if (planet.num_docking_spots
@@ -349,11 +390,17 @@ fn main() {
                         {
                             (ship.id, None)
 
-                        // if close enough to dock, dock
+                        // if close enough to dock
                         } else if ship.in_dock_range(planet) {
-                            planet.committed_ships.set(planet.committed_ships.get() + 1);
-                            logger.log(&format!("  Ship {} docking to {}", ship.id, planet.id));
-                            (ship.id, Some(ship.dock(planet)))
+
+                            // dock unless there's a enemy ship nearby
+                            if enemy_undocked_ships.len() == 0 || ship.distance_to(ship.nearest_entity(enemy_undocked_ships.as_slice())) > (DOCK_TURNS * MAX_SPEED) as f64 { 
+                                planet.committed_ships.set(planet.committed_ships.get() + 1);
+                                logger.log(&format!("  Ship {} docking to {}", ship.id, planet.id));
+                                (ship.id, Some(ship.dock(planet)))
+                            } else {
+                                (ship.id, None)
+                            }
 
                         // otherwise, fly towards planet
                         } else {
@@ -386,7 +433,8 @@ fn main() {
                         }
                     }
 
-                    &Move::AttackMove(enemy_ship, d) => if ship.distance_to(enemy_ship) < WEAPON_RADIUS / 2.0 {
+                    &Move::RaidMove(enemy_ship, d) => if ship.distance_to(enemy_ship) < WEAPON_RADIUS / 2.0 {
+                        // TODO: run away when attacked?
                         logger.log(&format!(
                             "  ship {} will remain {} to attack {}",
                             ship.id,
@@ -395,7 +443,7 @@ fn main() {
                         ));
                         (ship.id, Some(Command::Stay()))
                     } else {
-                        let destination = &ship.closest_point_to(enemy_ship, WEAPON_RADIUS / 2.0);
+                        let destination = &ship.closest_point_to(enemy_ship, WEAPON_RADIUS);
                         let (speed, angle) = ship.route_to(destination, &game_map);
                         let speed_angle: Option<(i32, i32)> =
                             ship.safely_adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS);
