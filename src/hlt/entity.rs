@@ -7,7 +7,7 @@ use std::fmt;
 use hlt::pathfind::avoid;
 use hlt::parse::Decodable;
 use hlt::command::Command;
-use hlt::constants::{DOCK_RADIUS, FUDGE, MAX_SPEED, SHIP_COST, SHIP_RADIUS};
+use hlt::constants::{DOCK_RADIUS, DOCK_TURNS, FUDGE, MAX_SHIP_HEALTH, MAX_SPEED, SHIP_COST, SHIP_RADIUS, WEAPON_RADIUS};
 use hlt::player::Player;
 use hlt::game_map::GameMap;
 use hlt::logging::Logger;
@@ -106,12 +106,87 @@ impl Ship {
         Command::Undock(self.id)
     }
 
+    pub fn increment_committed_ships(&self) {
+        self.committed_ships.set(1 + self.committed_ships.get());
+    }
+
     pub fn in_dock_range(&self, planet: &Planet) -> bool {
         self.distance_to(planet) <= (DOCK_RADIUS + planet.radius)
     }
 
+    pub fn in_attack_range(&self, ship: &Ship) -> bool {
+        // TODO: is this correct?
+        self.distance_to(ship) <= (WEAPON_RADIUS + SHIP_RADIUS + SHIP_RADIUS)
+    }
+
     pub fn is_undocked(&self) -> bool {
         self.docking_status == DockingStatus::UNDOCKED
+    }
+
+    pub fn hp_percent(&self) -> f64 {
+        self.hp as f64 / MAX_SHIP_HEALTH as f64
+    }
+
+    pub fn dock_value(&self, planet: &Planet) -> f64 {
+        // factor in nearby enemy undocked ships?
+        // ship.distance_to(ship.nearest_entity(targets.undocked_ships.as_slice()))
+        //                           > (MAX_SPEED * (DOCK_TURNS - 0)) as f64
+        self.distance_to_surface(planet) + (MAX_SPEED * (DOCK_TURNS - 0)) as f64
+    }
+
+    // lower is higher priority (...)
+    // distance to ship * a multiplier in (0.5 - 1.0) based on hp%
+    pub fn attack_value(&self, enemy_ship: &Ship) -> f64 {
+        // if !game_map.get_me().owns_ship(self.id) {
+        //     panic!(format!(
+        //         "attack_value() called on not my ship: {:?}",
+        //         self
+        //     ))
+        // }
+        // if game_map.get_me().owns_ship(enemy_ship.id) {
+        //     panic!(format!(
+        //         "attack_value() called with my ship: {:?}",
+        //         enemy_ship
+        //     ))
+        // }
+        self.distance_to_surface(enemy_ship) * (0.5 + (enemy_ship.hp_percent() / 2.0))
+    }
+
+    // given an enemy ship, get my closest docked ship to it. That distance * (0.75
+    // - 1.0 depending on docked ship hp%) is considered the 'threat'. Compare
+    // threat to how close self is to the docked ship to decide if it's a sensible
+    // defender
+    // need to figure out how to ensure this is comparable to attack_value
+    pub fn defense_value(&self, enemy_ship: &Ship, game_map: &GameMap) -> f64 {
+        if !game_map.get_me().owns_ship(self.id) {
+            panic!(format!("defense_value() called on not my ship: {:?}", self))
+        }
+        if game_map.get_me().owns_ship(enemy_ship.id) {
+            panic!(format!(
+                "defense_value() called with my ship: {:?}",
+                enemy_ship
+            ))
+        }
+
+        // maybe also filter out my ships which will have undocked by the time the
+        // enemy ship could arrive? Not necessary until undocking implemented
+        let my_docked_ships: Vec<&Ship> = game_map
+            .my_ships()
+            .into_iter()
+            .filter(|s| !s.is_undocked())
+            .collect();
+
+        if my_docked_ships.len() > 0 {
+            let nearest_docked_ship = enemy_ship.nearest_entity(my_docked_ships.as_slice());
+            let threat =
+                enemy_ship.distance_to_surface(nearest_docked_ship) * (0.75 + (nearest_docked_ship.hp_percent() / 4.0));
+            let distance_to_victim = self.distance_to_surface(nearest_docked_ship);
+            (distance_to_victim + threat) / 2.0
+        } else {
+            // if I have no docked ships, there's nothing to defend, unless I can attempt
+            // to preemptively defend ships which are going to dock
+            999f64
+        }
     }
 
     pub fn commanded(&self) -> bool {
@@ -124,6 +199,16 @@ impl Ship {
 
     pub fn set_positions(&mut self, positions: Vec<Position>) {
         self.positions = positions
+    }
+
+    pub fn set_velocity(&self, v_x: f64, v_y: f64) {
+        self.velocity_x.set(v_x);
+        self.velocity_y.set(v_y);
+    }
+
+    pub fn reset_velocity(&self) {
+        self.velocity_x.set(0f64);
+        self.velocity_y.set(0f64);
     }
 
     pub fn route_to<T: Entity>(&self, target: &T, game_map: &GameMap) -> (i32, i32) {
@@ -149,40 +234,70 @@ impl Ship {
         )
     }
 
-    pub fn adjust_thrust(
+    fn collide_helper(&self, other_ship: &Ship, radius: f64) -> bool {
+        let step_count = 20;
+        (1..(step_count + 1)).collect::<Vec<i32>>().iter().any(|t| {
+            self.dist_to_at(other_ship, (*t as f64 / step_count as f64).clone()) < radius
+        })
+    }
+
+    pub fn will_collide_with(&self, other_ship: &Ship) -> bool {
+        self.collide_helper(other_ship, (SHIP_RADIUS * 2f64) + FUDGE)
+    }
+
+    pub fn will_enter_attack_range(&self, other_ship: &Ship) -> bool {
+        self.collide_helper(other_ship, (SHIP_RADIUS * 2f64) + FUDGE + WEAPON_RADIUS)
+    }
+
+    fn adjust_thrust_helper(
         &self,
         game_map: &GameMap,
         speed: i32,
         angle: i32,
         max_corrections: i32,
+        avoid_enemies: bool,
     ) -> Option<(i32, i32)> {
         // let mut logger = Logger::new(0);
         let nav_radius = SHIP_RADIUS + FUDGE;
         let velocity_x = speed as f64 * (angle as f64).to_radians().cos();
         let velocity_y = speed as f64 * (angle as f64).to_radians().sin();
-        let my_ships = game_map.get_me().all_ships();
+        let my_ships = game_map.my_ships();
+        let enemy_ships: Vec<&Ship> = game_map
+            .enemy_ships()
+            .into_iter()
+            .filter(|other| {
+                other.is_undocked()
+
+                    // too far away to possibly enter attack range
+                    && self.distance_to(*other) < FUDGE + WEAPON_RADIUS + (2f64 * (SHIP_RADIUS + MAX_SPEED as f64))
+
+                // already in attack range, can't avoid damage
+                // && !self.in_attack_range(other)
+            })
+            .collect();
 
         let will_collide = |v_x, v_y| -> bool {
             // check enemy stationary ships? if not docked and more health?
             let thrust_end = Position(self.get_position().0 + v_x, self.get_position().1 + v_y);
-            self.velocity_x.set(v_x);
-            self.velocity_y.set(v_y);
+            self.set_velocity(v_x, v_y);
             let step_count = 20;
-            let collide_with_ship: bool = my_ships.iter()// only ships that could collide this turn need be checked
-                .filter(|other| other.id != self.id
-                        && self.distance_to(*other) < FUDGE + (2f64 * (SHIP_RADIUS + MAX_SPEED as f64))
+            let collide_with_friendly_ship: bool = my_ships
+                .iter()
+                .filter(|other| {
+                    other.id != self.id // only ships that could get close enough
+                        && self.distance_to(**other) < FUDGE + (2f64 * (SHIP_RADIUS + MAX_SPEED as f64))
                         && other.is_undocked()
-                       )
-                .any(|other|
-                      (1..(step_count+1)).collect::<Vec<i32>>().iter()
-                      .any(|t|
-                           self.dist_to_at(other, (*t as f64 / step_count as f64).clone()) <
-                              (SHIP_RADIUS * 2f64) + FUDGE
-                          )
-                     );
-            self.velocity_x.set(0f64);
-            self.velocity_y.set(0f64);
-            if collide_with_ship {
+                })
+                .any(|other| self.will_collide_with(other));
+            let attacked_by_enemy = if avoid_enemies {
+                enemy_ships.iter().any(|enemy| {
+                    !self.in_attack_range(enemy) && self.will_enter_attack_range(enemy)
+                })
+            } else {
+                false
+            };
+            self.reset_velocity();
+            if collide_with_friendly_ship || attacked_by_enemy {
                 return true;
             }
             game_map
@@ -205,6 +320,26 @@ impl Ship {
             }
         }
         None
+    }
+
+    pub fn safely_adjust_thrust(
+        &self,
+        game_map: &GameMap,
+        speed: i32,
+        angle: i32,
+        max_corrections: i32,
+    ) -> Option<(i32, i32)> {
+        self.adjust_thrust_helper(game_map, speed, angle, max_corrections, true)
+    }
+
+    pub fn adjust_thrust(
+        &self,
+        game_map: &GameMap,
+        speed: i32,
+        angle: i32,
+        max_corrections: i32,
+    ) -> Option<(i32, i32)> {
+        self.adjust_thrust_helper(game_map, speed, angle, max_corrections, false)
     }
 }
 
@@ -278,6 +413,10 @@ impl Planet {
     #[allow(dead_code)]
     pub fn any_docked(&self) -> bool {
         self.docked_ships.len() > 0
+    }
+
+    pub fn increment_committed_ships(&self) {
+        self.committed_ships.set(1 + self.committed_ships.get());
     }
 
     pub fn turns_until_spawn(&self) -> i32 {

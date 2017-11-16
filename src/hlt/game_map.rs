@@ -38,10 +38,23 @@ impl<'a> GameMap<'a> {
             .collect()
     }
 
+    pub fn my_ships(&self) -> Vec<&Ship> {
+        self.state
+            .players
+            .iter()
+            .filter(|p| p.id == self.game.my_id as i32)
+            .flat_map(|p| p.all_ships())
+            .collect()
+    }
+
     pub fn get_me(&self) -> &Player {
         let my_id = self.game.my_id;
         let player = &self.state.players[my_id];
         return player;
+    }
+
+    pub fn get_ship(&self, ship_id: i32) -> &Ship {
+        self.all_ships().iter().find(|s| s.id == ship_id).unwrap()
     }
 
     pub fn closest_stationary_obstacle(
