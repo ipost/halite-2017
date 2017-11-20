@@ -7,4 +7,5 @@ pub mod game_map;
 pub mod player;
 pub mod collision;
 pub mod pathfind;
+pub mod macros;
 mod parse;

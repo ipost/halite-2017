@@ -23,7 +23,9 @@ cat src/hlt/constants.rs | grep -A500 'CONFIGURATIONS' | tail -n+2
 FILENAME=.bot_tests
 [ -e $FILENAME ] && rm -f $FILENAME
 touch $FILENAME
-GAMES=100
+BOT_1="target/release/MyBot"
+BOT_2="bots/ipostv3"
+GAMES=20
 PARALLEL=1
 GAMES=$((GAMES / PARALLEL))
 
@@ -37,8 +39,8 @@ do
       # largest board is 384 x 256, smallest is 240 x 160
       SIZE_Y=$(awk -v min=160 -v max=256 'BEGIN{srand(); print int(min+rand()*(max-min+1))}')
       SIZE_X=$((SIZE_Y * 3 / 2 ))
-      echo "\n"
-      ./halite_osx -d "$SIZE_X $SIZE_Y" "target/release/MyBot" "bots/ipostv3" >> $FILENAME
+      ./halite_osx -d "$SIZE_X $SIZE_Y" "RUST_BACKTRACE=1 $BOT_1" "$BOT_2" "$BOT_2" "$BOT_2" >> $FILENAME
+      #./halite_osx -d "$SIZE_X $SIZE_Y" "RUST_BACKTRACE=1 $BOT_1" "$BOT_2" >> $FILENAME
       #./halite_osx -d "$SIZE_X $SIZE_Y" "target/release/MyBot" "bots/cheesebotv2" >> $FILENAME
       #./halite_osx -d "$SIZE_X $SIZE_Y" "RUST_BACKTRACE=1 target/release/MyBot" "./bots/ipostv3" "./bots/ipostv3" "./bots/ipostv3" >> $FILENAME
     done

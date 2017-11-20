@@ -17,6 +17,13 @@ SIZE_X=$((SIZE_Y * 3 / 2 ))
 
 #./halite_osx -s 542739609 -d "280 187" "RUST_BACKTRACE=1 target/release/MyBot" "bots/ipostv3"
 #./halite_osx -s 2191309506 -d "384 256" "RUST_BACKTRACE=1 target/release/MyBot" "bots/ipostv3"
-./halite_osx -s 2191309507 -d "384 256" "RUST_BACKTRACE=1 target/release/MyBot" "bots/ipostv3"
+#./halite_osx -s 2191309507 -d "384 256" "RUST_BACKTRACE=1 target/release/MyBot" "bots/ipostv3"
+#./halite_osx -s 1803222514 -d "355 237" "RUST_BACKTRACE=1 target/release/MyBot" "bots/ipostv3"
+
+#oscillating between planets
+#./halite_osx -s 2902545647 -d "351 234" "RUST_BACKTRACE=1 target/release/MyBot" "bots/cheesebot"
+
+#Seed: 1317208724 Dimensions: 276x184
+./halite_osx -s 1384755869 -d "306 204" "RUST_BACKTRACE=1 target/release/MyBot" "bots/ipostv3" "bots/ipostv3" "bots/ipostv3"
 
 mv replays/*.hlt .

@@ -91,4 +91,12 @@ impl<'a> GameMap<'a> {
         }
         obstacle
     }
+
+    pub fn width(&self) -> f64 {
+        self.game.map_width as f64
+    }
+
+    pub fn height(&self) -> f64 {
+        self.game.map_height as f64
+    }
 }

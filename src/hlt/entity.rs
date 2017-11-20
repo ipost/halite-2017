@@ -1,5 +1,3 @@
-
-
 use std::cell::Cell;
 use std::cmp::{max, min};
 use std::fmt;
@@ -11,6 +9,10 @@ use hlt::constants::{DOCK_RADIUS, DOCK_TURNS, FUDGE, MAX_SHIP_HEALTH, MAX_SPEED,
 use hlt::player::Player;
 use hlt::game_map::GameMap;
 use hlt::logging::Logger;
+use hlt::macros::*;
+macro_rules! assert_unreachable (
+    () => { panic!(format!("line {}", line!())) }
+    );
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Position(pub f64, pub f64);
@@ -107,7 +109,11 @@ impl Ship {
     }
 
     pub fn increment_committed_ships(&self) {
-        self.committed_ships.set(1 + self.committed_ships.get());
+        self.committed_ships.set(1 + self.commitment());
+    }
+
+    pub fn commitment(&self) -> i32 {
+        self.committed_ships.get()
     }
 
     pub fn in_dock_range(&self, planet: &Planet) -> bool {
@@ -127,29 +133,32 @@ impl Ship {
         self.hp as f64 / MAX_SHIP_HEALTH as f64
     }
 
-    pub fn dock_value(&self, planet: &Planet) -> f64 {
-        // factor in nearby enemy undocked ships?
-        // ship.distance_to(ship.nearest_entity(targets.undocked_ships.as_slice()))
-        //                           > (MAX_SPEED * (DOCK_TURNS - 0)) as f64
-        self.distance_to_surface(planet) + (MAX_SPEED * (DOCK_TURNS - 0)) as f64
+    fn base_dock_value(&self, planet: &Planet, game_map: &GameMap) -> f64 {
+        dock_value_helper(self, planet, game_map)
+    }
+
+    pub fn dock_value(&self, planet: &Planet, game_map: &GameMap) -> f64 {
+        self.base_dock_value(planet, game_map)
+            + (0.5
+                * game_map
+                    .all_planets()
+                    .iter()
+                    .filter(|p| p.id != planet.id)
+                    .map(|p| planet.base_dock_value(p, game_map))
+                    .filter(|v| v < &1000.0)
+                    .fold(0.0, |acc, s| acc + s) / game_map.all_planets().len() as f64)
     }
 
     // lower is higher priority (...)
     // distance to ship * a multiplier in (0.5 - 1.0) based on hp%
-    pub fn attack_value(&self, enemy_ship: &Ship) -> f64 {
-        // if !game_map.get_me().owns_ship(self.id) {
-        //     panic!(format!(
-        //         "attack_value() called on not my ship: {:?}",
-        //         self
-        //     ))
-        // }
-        // if game_map.get_me().owns_ship(enemy_ship.id) {
-        //     panic!(format!(
-        //         "attack_value() called with my ship: {:?}",
-        //         enemy_ship
-        //     ))
-        // }
-        self.distance_to_surface(enemy_ship) * (0.5 + (enemy_ship.hp_percent() / 2.0))
+    pub fn raid_value(&self, enemy_ship: &Ship) -> f64 {
+        (enemy_ship.commitment() + 1) as f64 * self.distance_to_surface(enemy_ship)
+            * (0.5 + (enemy_ship.hp_percent() / 2.0))
+    }
+
+    pub fn intercept_value(&self, enemy_ship: &Ship) -> f64 {
+        ((enemy_ship.commitment() + 1) * 2 + 1) as f64 * self.distance_to_surface(enemy_ship)
+            * (0.5 + (enemy_ship.hp_percent() / 2.0))
     }
 
     // given an enemy ship, get my closest docked ship to it. That distance * (0.75
@@ -178,14 +187,17 @@ impl Ship {
 
         if my_docked_ships.len() > 0 {
             let nearest_docked_ship = enemy_ship.nearest_entity(my_docked_ships.as_slice());
-            let threat =
-                enemy_ship.distance_to_surface(nearest_docked_ship) * (0.75 + (nearest_docked_ship.hp_percent() / 4.0));
-            let distance_to_victim = self.distance_to_surface(nearest_docked_ship);
-            (distance_to_victim + threat) / 2.0
+            let threat = enemy_ship.distance_to_surface(nearest_docked_ship)
+                * (0.66667 + (nearest_docked_ship.hp_percent() / 3.0));
+            // let distance_to_victim = self.distance_to_surface(nearest_docked_ship);
+            // (enemy_ship.commitment() * 2 + 1) as f64 * (distance_to_victim + (threat *
+            // 1.2)) // / 2.0
+            let distance_to_aggressor = self.distance_to_surface(enemy_ship);
+            (enemy_ship.commitment() * 9 + 1) as f64 * ((distance_to_aggressor * 0.5) + (threat * 1.5)) // / 2.0
         } else {
             // if I have no docked ships, there's nothing to defend, unless I can attempt
             // to preemptively defend ships which are going to dock
-            999f64
+            9999f64
         }
     }
 
@@ -343,6 +355,44 @@ impl Ship {
     }
 }
 
+fn dock_value_helper<T: Entity>(entity: &T, planet: &Planet, game_map: &GameMap) -> f64 {
+    let planet_pos = planet.get_position();
+    let edge_dist_x = if planet_pos.0 > game_map.width() / 2.0 {
+        game_map.width() - planet_pos.0
+    } else {
+        planet_pos.0
+    };
+    let edge_dist_y = if planet_pos.1 > game_map.height() / 2.0 {
+        game_map.height() - planet_pos.1
+    } else {
+        planet_pos.1
+    };
+    let edge_dist_modifier = 0.50 + ((((edge_dist_x / game_map.width()) + (edge_dist_y / game_map.height()))) / 2.0);
+    let size_factor = match planet.num_docking_spots {
+        2 => 1.20,
+        3 => 1.15,
+        4 => 1.10,
+        5 => 1.05,
+        6 => 1.00,
+        _ => assert_unreachable!(),
+    };
+    let planet_total = planet.commitment() + planet.docked_ships.len() as i32;
+    let commitment_factor = if planet_total >= planet.num_docking_spots {
+        99999f64
+    } else if planet_total > 0 {
+        0.85
+    } else {
+        1.0
+    };
+    // factor in commitment
+    // factor in if ship will spawn before I can arrive
+    // factor in nearby planets
+    commitment_factor * size_factor
+        * (entity.distance_to_surface(planet)
+           // because docking will put the ship out of commision for that long. I guess?
+           + (2 * MAX_SPEED * (DOCK_TURNS + 0)) as f64) * edge_dist_modifier
+}
+
 impl PartialEq for Ship {
     fn eq(&self, other: &Ship) -> bool {
         self.id == other.id
@@ -416,7 +466,11 @@ impl Planet {
     }
 
     pub fn increment_committed_ships(&self) {
-        self.committed_ships.set(1 + self.committed_ships.get());
+        self.committed_ships.set(1 + self.commitment());
+    }
+
+    pub fn commitment(&self) -> i32 {
+        self.committed_ships.get()
     }
 
     pub fn turns_until_spawn(&self) -> i32 {
@@ -430,6 +484,10 @@ impl Planet {
     pub fn spawn_position(&self) -> Position {
         // TODO: IMPLEMENT THIS
         Position { 0: 0f64, 1: 0f64 }
+    }
+
+    fn base_dock_value(&self, planet: &Planet, game_map: &GameMap) -> f64 {
+        dock_value_helper(self, planet, game_map)
     }
 }
 
