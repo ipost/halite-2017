@@ -23,7 +23,6 @@ SIZE_X=$((SIZE_Y * 3 / 2 ))
 #oscillating between planets
 #./halite_osx -s 2902545647 -d "351 234" "RUST_BACKTRACE=1 target/release/MyBot" "bots/cheesebot"
 
-#Seed: 1317208724 Dimensions: 276x184
-./halite_osx -s 1384755869 -d "306 204" "RUST_BACKTRACE=1 target/release/MyBot" "bots/ipostv3" "bots/ipostv3" "bots/ipostv3"
+./halite_osx -s 476480283 -d "358 239"  "RUST_BACKTRACE=1 target/release/MyBot" "bots/ipostv4"
 
 mv replays/*.hlt .

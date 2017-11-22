@@ -1,1 +1,1 @@
-zip submission.zip Cargo* -r src -x "*.swp"
+zip submission.zip Cargo* -r src -x "*.swp" -x "*.swo"

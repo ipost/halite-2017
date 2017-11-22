@@ -247,7 +247,8 @@ impl Ship {
     }
 
     fn collide_helper(&self, other_ship: &Ship, radius: f64) -> bool {
-        let step_count = 20;
+        // TODO: optimize this? requires calculus?
+        let step_count = 25;
         (1..(step_count + 1)).collect::<Vec<i32>>().iter().any(|t| {
             self.dist_to_at(other_ship, (*t as f64 / step_count as f64).clone()) < radius
         })
@@ -549,6 +550,12 @@ pub trait Entity: Sized {
         let Position(x1, y1) = self.get_position();
         let Position(x2, y2) = target.get_position();
         f64::sqrt((x2 - x1).powi(2) + (y2 - y1).powi(2))
+    }
+
+    fn distance_to_less_than<T: Entity>(&self, target: &T, query: f64) -> bool {
+        let Position(x1, y1) = self.get_position();
+        let Position(x2, y2) = target.get_position();
+        (x2 - x1).powi(2) + (y2 - y1).powi(2) < query.powi(2)
     }
 
     fn distance_to_surface<T: Entity>(&self, target: &T) -> f64 {

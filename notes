@@ -1,3 +1,14 @@
+0 <= t <= 1
+d(t) = p(A,t) - p(B,t)
+p(s,t) = (s.px + (t * s.vx), s.py + (t * s.vy))
+
+
+
+for cases where knowing the distance between things is not important, but knowing that it is less than some quantity is: instead of working with the actual distance between positions, comparison could be done against the square of the distance. would avoid potentially expensive sqrt() operation in favor of squaring
+
+
+
+
 
 /* Ships: A, B
  * P(x, t) = position of x at time t

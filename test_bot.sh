@@ -26,7 +26,7 @@ touch $FILENAME
 BOT_1="target/release/MyBot"
 BOT_2="bots/ipostv3"
 GAMES=20
-PARALLEL=1
+PARALLEL=2
 GAMES=$((GAMES / PARALLEL))
 
 #run $PARALLEL games at a time
@@ -56,5 +56,6 @@ echo "Test time: $((END_TIME - START_TIME))s"
 echo "Player #0 won $(cat .bot_tests | grep "Player #0.\+came in rank #1" | wc -l) times out of $((GAMES * PARALLEL)) games"
 echo "Player #1 won $(cat .bot_tests | grep "Player #1.\+came in rank #1" | wc -l) times out of $((GAMES * PARALLEL)) games"
 echo "$(ls *-*.log 2> /dev/null | wc -l) Failures found"
+echo -ne "\0007"
 
 #ps | grep ipostv3 | awk -F" " '{if ($1) print $1}' | xargs kill

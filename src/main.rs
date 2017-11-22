@@ -256,7 +256,7 @@ ShipMoves {{
 
 fn main() {
     // Initialize the game
-    let bot_name = "memetron_420v4";
+    let bot_name = "memetron_420v5";
     let game = Game::new(bot_name);
     // Initialize logging
     let mut logger = Logger::new(game.my_id);
@@ -340,7 +340,7 @@ fn main() {
             s.set_velocity(velocity_x, velocity_y);
         }
 
-        let ship_advantage = my_ships.len() as f64 / game_map.enemy_ships().len() as f64;
+        let ship_count = my_ships.len();
         let my_docked_ships: Vec<&Ship> = my_ships.into_iter().filter(|s| !s.is_undocked()).collect();
 
         let mut ships_to_order = vec![];
@@ -516,8 +516,14 @@ fn main() {
                         } else {
                             let destination = &ship.closest_point_to(enemy_ship, WEAPON_RADIUS);
                             let (speed, angle) = ship.route_to(destination, &game_map);
-                            let speed_angle: Option<(i32, i32)> =
-                                ship.safely_adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS);
+                            let speed_angle: Option<(i32, i32)> = if attempted_commands.get(&ship.id).unwrap() < &30 {
+                                ship.safely_adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS)
+                            } else {
+                                ship.adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS)
+                            };
+                            // maybe don't safely adjust after hitting some threshold of attempted
+                            // commands? or maybe if surrounded by too many friendlies
+                            // or maybe try taking the long way around the obstacle, if any
                             match speed_angle {
                                 Some((speed, angle)) => {
                                     if speed == 0 {
@@ -616,9 +622,7 @@ fn main() {
                             let destination = enemy_ship.get_position();
                             let (speed, angle) = ship.route_to(&destination, &game_map);
                             let speed_angle: Option<(i32, i32)> =
-                                        // need safely_adjust variant which does not avoid enemies, only
-                                        // friendlies
-                                        ship.adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS);
+                                ship.adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS);
                             match speed_angle {
                                 Some((speed, angle)) => {
                                     logger.log(&format!(
@@ -667,7 +671,7 @@ fn main() {
                     }
                     None => {
                         *attempted_commands.get_mut(&ship_id).unwrap() += 1;
-                        if attempted_commands[&ship_id] as f64 >= (200 as f64 / ship_advantage) {
+                        if attempted_commands[&ship_id] >= (15000 / ship_count) as i32 {
                             game_map
                                 .get_ship(ship_id)
                                 .command
