@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-cargo rustc --release -q -- -Awarnings
 cargo rustc --release -q -- -Awarnings -A dead_code
 
 if ls log_*.txt 1> /dev/null 2>&1; then
@@ -24,8 +23,8 @@ FILENAME=.bot_tests
 [ -e $FILENAME ] && rm -f $FILENAME
 touch $FILENAME
 BOT_1="target/release/MyBot"
-BOT_2="bots/ipostv3"
-GAMES=20
+BOT_2="bots/ipostv5"
+GAMES=40
 PARALLEL=2
 GAMES=$((GAMES / PARALLEL))
 
@@ -39,8 +38,8 @@ do
       # largest board is 384 x 256, smallest is 240 x 160
       SIZE_Y=$(awk -v min=160 -v max=256 'BEGIN{srand(); print int(min+rand()*(max-min+1))}')
       SIZE_X=$((SIZE_Y * 3 / 2 ))
-      ./halite_osx -d "$SIZE_X $SIZE_Y" "RUST_BACKTRACE=1 $BOT_1" "$BOT_2" "$BOT_2" "$BOT_2" >> $FILENAME
-      #./halite_osx -d "$SIZE_X $SIZE_Y" "RUST_BACKTRACE=1 $BOT_1" "$BOT_2" >> $FILENAME
+      #./halite_osx -d "$SIZE_X $SIZE_Y" "RUST_BACKTRACE=1 $BOT_1" "$BOT_2" "$BOT_2" "$BOT_2" >> $FILENAME
+      ./halite_osx -d "$SIZE_X $SIZE_Y" "RUST_BACKTRACE=1 $BOT_1" "$BOT_2" >> $FILENAME
       #./halite_osx -d "$SIZE_X $SIZE_Y" "target/release/MyBot" "bots/cheesebotv2" >> $FILENAME
       #./halite_osx -d "$SIZE_X $SIZE_Y" "RUST_BACKTRACE=1 target/release/MyBot" "./bots/ipostv3" "./bots/ipostv3" "./bots/ipostv3" >> $FILENAME
     done
@@ -57,5 +56,6 @@ echo "Player #0 won $(cat .bot_tests | grep "Player #0.\+came in rank #1" | wc -
 echo "Player #1 won $(cat .bot_tests | grep "Player #1.\+came in rank #1" | wc -l) times out of $((GAMES * PARALLEL)) games"
 echo "$(ls *-*.log 2> /dev/null | wc -l) Failures found"
 echo -ne "\0007"
+#say "test complete"
 
 #ps | grep ipostv3 | awk -F" " '{if ($1) print $1}' | xargs kill

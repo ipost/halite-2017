@@ -26,6 +26,18 @@ extern crate time;
 use time::PreciseTime;
 use std::cmp::Ordering;
 
+macro_rules! assert_unreachable (
+    () => { panic!(format!("line {}", line!())) }
+    );
+macro_rules! print_timing (
+        ($code: block) => {{
+            let pt_start_time = PreciseTime::now();
+            let res = $code;
+            Logger::new(0).log(&format!("  time at line {}: {}", line!(), pt_start_time.to(PreciseTime::now())));
+            res
+        }}
+            );
+
 struct Targets<'a> {
     docked_ships: Vec<&'a Ship>,
     undocked_ships: Vec<&'a Ship>,
@@ -49,6 +61,7 @@ enum Move<'a> {
     RaidMove(&'a Ship, f64),
     DefendMove(&'a Ship, f64),
     InterceptMove(&'a Ship, f64),
+    //TODO: move to destroy planet when enemy is clumped around it!
 }
 
 impl<'a> Move<'a> {
@@ -256,7 +269,7 @@ ShipMoves {{
 
 fn main() {
     // Initialize the game
-    let bot_name = "memetron_420v5";
+    let bot_name = "memetron_420v6";
     let game = Game::new(bot_name);
     // Initialize logging
     let mut logger = Logger::new(game.my_id);
@@ -420,7 +433,7 @@ fn main() {
                 .collect();
 
             // break executed at end if command issued
-            while true {
+            loop {
                 let (ship_id, command) = {
                     // find the current ship which has the best move to make
                     let ship_to_move = all_ship_moves
@@ -476,8 +489,12 @@ fn main() {
                             } else {
                                 let destination = &ship.closest_point_to(planet, 3.0);
                                 let (speed, angle) = ship.route_to(destination, &game_map);
-                                let speed_angle: Option<(i32, i32)> =
-                                    ship.safely_adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS);
+                                let speed_angle: Option<(i32, i32)> = if attempted_commands.get(&ship.id).unwrap() < &25
+                                {
+                                    ship.safely_adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS)
+                                } else {
+                                    ship.adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS)
+                                };
                                 match speed_angle {
                                     Some((speed, angle)) => {
                                         logger.log(&format!(
@@ -514,9 +531,9 @@ fn main() {
                             ));
                             (ship.id, Some(Command::Stay()))
                         } else {
-                            let destination = &ship.closest_point_to(enemy_ship, WEAPON_RADIUS);
+                            let destination = &ship.closest_point_to(enemy_ship, WEAPON_RADIUS * 0.95);
                             let (speed, angle) = ship.route_to(destination, &game_map);
-                            let speed_angle: Option<(i32, i32)> = if attempted_commands.get(&ship.id).unwrap() < &30 {
+                            let speed_angle: Option<(i32, i32)> = if attempted_commands.get(&ship.id).unwrap() < &25 {
                                 ship.safely_adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS)
                             } else {
                                 ship.adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS)
@@ -671,7 +688,7 @@ fn main() {
                     }
                     None => {
                         *attempted_commands.get_mut(&ship_id).unwrap() += 1;
-                        if attempted_commands[&ship_id] >= (15000 / ship_count) as i32 {
+                        if attempted_commands[&ship_id] >= (13000 / ship_count) as i32 {
                             game_map
                                 .get_ship(ship_id)
                                 .command
@@ -686,7 +703,7 @@ fn main() {
                             .update_best_move();
                     }
                 }
-            } // while true
+            } // loop
         }
         for command in command_queue.iter() {
             logger.log(&format!("{}", command.encode()));

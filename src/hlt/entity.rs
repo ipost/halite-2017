@@ -2,13 +2,15 @@ use std::cell::Cell;
 use std::cmp::{max, min};
 use std::fmt;
 
-use hlt::pathfind::avoid;
+use hlt::pathfind::{long_angle_around, short_angle_around};
 use hlt::parse::Decodable;
 use hlt::command::Command;
 use hlt::constants::{DOCK_RADIUS, DOCK_TURNS, FUDGE, MAX_SHIP_HEALTH, MAX_SPEED, SHIP_COST, SHIP_RADIUS, WEAPON_RADIUS};
 use hlt::player::Player;
 use hlt::game_map::GameMap;
 use hlt::logging::Logger;
+extern crate time;
+use time::PreciseTime;
 use hlt::macros::*;
 macro_rules! assert_unreachable (
     () => { panic!(format!("line {}", line!())) }
@@ -117,12 +119,12 @@ impl Ship {
     }
 
     pub fn in_dock_range(&self, planet: &Planet) -> bool {
-        self.distance_to(planet) <= (DOCK_RADIUS + planet.radius)
+        self.distance_to_less_than(planet, (DOCK_RADIUS + planet.radius))
     }
 
     pub fn in_attack_range(&self, ship: &Ship) -> bool {
         // TODO: is this correct?
-        self.distance_to(ship) <= (WEAPON_RADIUS + SHIP_RADIUS + SHIP_RADIUS)
+        self.distance_to_less_than(ship, (WEAPON_RADIUS + SHIP_RADIUS + SHIP_RADIUS))
     }
 
     pub fn is_undocked(&self) -> bool {
@@ -193,7 +195,7 @@ impl Ship {
             // (enemy_ship.commitment() * 2 + 1) as f64 * (distance_to_victim + (threat *
             // 1.2)) // / 2.0
             let distance_to_aggressor = self.distance_to_surface(enemy_ship);
-            (enemy_ship.commitment() * 9 + 1) as f64 * ((distance_to_aggressor * 0.5) + (threat * 1.5)) // / 2.0
+            (enemy_ship.commitment() * 9 + 1) as f64 * ((distance_to_aggressor * 0.5) + (threat * 1.5))
         } else {
             // if I have no docked ships, there's nothing to defend, unless I can attempt
             // to preemptively defend ships which are going to dock
@@ -224,14 +226,13 @@ impl Ship {
     }
 
     pub fn route_to<T: Entity>(&self, target: &T, game_map: &GameMap) -> (i32, i32) {
-        // let mut logger = Logger::new(0);
         let speed = MAX_SPEED;
         let nav_radius = SHIP_RADIUS + FUDGE;
         let distance = self.distance_to(target);
         let closest_stationary_obstacle: Option<Obstacle> =
             game_map.closest_stationary_obstacle(&self.get_position(), &target.get_position(), FUDGE);
         let desired_trajectory = match closest_stationary_obstacle {
-            Some(obstacle) => avoid(
+            Some(obstacle) => short_angle_around(
                 self.get_position(),
                 target.get_position(),
                 obstacle.position,
@@ -249,9 +250,18 @@ impl Ship {
     fn collide_helper(&self, other_ship: &Ship, radius: f64) -> bool {
         // TODO: optimize this? requires calculus?
         let step_count = 25;
-        (1..(step_count + 1)).collect::<Vec<i32>>().iter().any(|t| {
-            self.dist_to_at(other_ship, (*t as f64 / step_count as f64).clone()) < radius
-        })
+        let mut step = 1;
+        while step <= step_count {
+            if self.dist_to_at_less_than(
+                other_ship,
+                (step as f64 / step_count as f64).clone(),
+                radius,
+            ) {
+                return true;
+            }
+            step += 1;
+        }
+        false
     }
 
     pub fn will_collide_with(&self, other_ship: &Ship) -> bool {
@@ -282,7 +292,7 @@ impl Ship {
                 other.is_undocked()
 
                     // too far away to possibly enter attack range
-                    && self.distance_to(*other) < FUDGE + WEAPON_RADIUS + (2f64 * (SHIP_RADIUS + MAX_SPEED as f64))
+                    && self.distance_to_less_than(*other, FUDGE + WEAPON_RADIUS + (2f64 * (SHIP_RADIUS + MAX_SPEED as f64)))
 
                 // already in attack range, can't avoid damage
                 // && !self.in_attack_range(other)
@@ -298,7 +308,7 @@ impl Ship {
                 .iter()
                 .filter(|other| {
                     other.id != self.id // only ships that could get close enough
-                        && self.distance_to(**other) < FUDGE + (2f64 * (SHIP_RADIUS + MAX_SPEED as f64))
+                        && self.distance_to_less_than(**other, FUDGE + (2f64 * (SHIP_RADIUS + MAX_SPEED as f64)))
                         && other.is_undocked()
                 })
                 .any(|other| self.will_collide_with(other));
@@ -385,9 +395,7 @@ fn dock_value_helper<T: Entity>(entity: &T, planet: &Planet, game_map: &GameMap)
     } else {
         1.0
     };
-    // factor in commitment
-    // factor in if ship will spawn before I can arrive
-    // factor in nearby planets
+    // factor in if ship will spawn before I can arrive?
     commitment_factor * size_factor
         * (entity.distance_to_surface(planet)
            // because docking will put the ship out of commision for that long. I guess?
@@ -546,16 +554,18 @@ pub trait Entity: Sized {
     fn get_position_at(&self, t: f64) -> Position;
     fn get_radius(&self) -> f64;
 
-    fn distance_to<T: Entity>(&self, target: &T) -> f64 {
+    fn distance_to_unsq<T: Entity>(&self, target: &T) -> f64 {
         let Position(x1, y1) = self.get_position();
         let Position(x2, y2) = target.get_position();
-        f64::sqrt((x2 - x1).powi(2) + (y2 - y1).powi(2))
+        (x2 - x1).powi(2) + (y2 - y1).powi(2)
+    }
+
+    fn distance_to<T: Entity>(&self, target: &T) -> f64 {
+        f64::sqrt(self.distance_to_unsq(target))
     }
 
     fn distance_to_less_than<T: Entity>(&self, target: &T, query: f64) -> bool {
-        let Position(x1, y1) = self.get_position();
-        let Position(x2, y2) = target.get_position();
-        (x2 - x1).powi(2) + (y2 - y1).powi(2) < query.powi(2)
+        self.distance_to_unsq(target) < query.powi(2)
     }
 
     fn distance_to_surface<T: Entity>(&self, target: &T) -> f64 {
@@ -566,6 +576,12 @@ pub trait Entity: Sized {
         let Position(x1, y1) = self.get_position_at(t);
         let Position(x2, y2) = target.get_position_at(t);
         f64::sqrt((x2 - x1).powi(2) + (y2 - y1).powi(2))
+    }
+
+    fn dist_to_at_less_than<T: Entity>(&self, target: &T, t: f64, query: f64) -> bool {
+        let Position(x1, y1) = self.get_position_at(t);
+        let Position(x2, y2) = target.get_position_at(t);
+        (x2 - x1).powi(2) + (y2 - y1).powi(2) < query.powi(2)
     }
 
     fn calculate_angle_between<T: Entity>(&self, target: &T) -> f64 {
@@ -588,9 +604,12 @@ pub trait Entity: Sized {
         entities
             .iter()
             .min_by(|e1, e2| {
-                (e1.distance_to(self) - e1.get_radius())
-                    .partial_cmp(&(e2.distance_to(self) - e2.get_radius()))
-                    .unwrap()
+                if e1.get_radius() == e2.get_radius() {
+                    e1.distance_to_unsq(self)
+                        .partial_cmp(&e2.distance_to_unsq(self))
+                } else {
+                    (e1.distance_to(self) - e1.get_radius()).partial_cmp(&(e2.distance_to(self) - e2.get_radius()))
+                }.unwrap()
             })
             .unwrap()
     }

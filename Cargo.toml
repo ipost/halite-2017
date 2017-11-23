@@ -10,3 +10,9 @@ clippy = {version = "*", optional = true}
 [[bin]]
 name = "MyBot"
 path = "src/main.rs"
+
+#[profile.dev]
+#debug = true
+#
+#[profile.release]
+#debug = true

@@ -1,7 +1,16 @@
 0 <= t <= 1
-d(t) = p(A,t) - p(B,t)
+d(t) = p(A,t) - p(B,t) < radius
 p(s,t) = (s.px + (t * s.vx), s.py + (t * s.vy))
+sqrt(
+  ((s1.px + (t * s1.vx)) - (s2.px + (t * s2.vx)))^2 + 
+  ((s1.py + (t * s1.vy)) - (s2.py + (t * s2.vy)))^2
+  ) < radius
 
+
+((s1.px + (t * s1.vx)) - (s2.px + (t * s2.vx)))^2 + ((s1.py + (t * s1.vy)) - (s2.py + (t * s2.vy)))^2 < radius^2
+0 <= t <= 1
+((A     + (t * B    )) - (C     + (t * D    )))^2 + ((E     + (t * F    )) - (G     + (t *     H)))^2 < R^2
+0 <= t <= 1
 
 
 for cases where knowing the distance between things is not important, but knowing that it is less than some quantity is: instead of working with the actual distance between positions, comparison could be done against the square of the distance. would avoid potentially expensive sqrt() operation in favor of squaring

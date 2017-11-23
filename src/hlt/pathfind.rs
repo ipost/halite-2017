@@ -12,7 +12,7 @@ macro_rules! in_360 (
     ($angle:expr) => ($angle % 360.0)
     );
 
-pub fn avoid(start: Position, destination: Position, obstacle_pos: Position, obstacle_size: f64) -> f64 {
+fn angle_around(start: Position, destination: Position, obstacle_pos: Position, obstacle_size: f64) -> (f64, f64) {
     // let mut logger = Logger::new(0);
     // s = start position
     // o = obstacle position
@@ -39,14 +39,27 @@ pub fn avoid(start: Position, destination: Position, obstacle_pos: Position, obs
     let y_delt = obstacle_pos.1 - start.1;
     let angle_to_obstacle = in_360!(y_delt.atan2(x_delt).to_degrees());
 
-    let thrust_angle = if angle_between(angle_to_dest, in_360!(angle_to_obstacle + turn_angle))
+    if angle_between(angle_to_dest, in_360!(angle_to_obstacle + turn_angle))
         < angle_between(angle_to_dest, in_360!(angle_to_obstacle - turn_angle))
     {
-        (angle_to_obstacle + turn_angle)
+        (
+            in_360!(angle_to_obstacle + turn_angle),
+            in_360!(angle_to_obstacle - turn_angle),
+        )
     } else {
-        (angle_to_obstacle - turn_angle)
-    };
-    in_360!(thrust_angle)
+        (
+            in_360!(angle_to_obstacle - turn_angle),
+            in_360!(angle_to_obstacle + turn_angle),
+        )
+    }
+}
+
+pub fn long_angle_around(start: Position, destination: Position, obstacle_pos: Position, obstacle_size: f64) -> f64 {
+    angle_around(start, destination, obstacle_pos, obstacle_size).1
+}
+
+pub fn short_angle_around(start: Position, destination: Position, obstacle_pos: Position, obstacle_size: f64) -> f64 {
+    angle_around(start, destination, obstacle_pos, obstacle_size).0
 }
 
 fn angle_between(a1: f64, a2: f64) -> f64 {
@@ -66,6 +79,16 @@ pub fn three_point_angle(p1: Position, p2: Position, p3: Position) -> f64 {
     ((d12.powi(2) + d13.powi(2) - d23.powi(2)) / (2f64 * d12 * d13)).acos()
 }
 
+/* pathfinding idea: take long and short angle around O as two choices, where O is the first object
+ * between the ship and its destination. Extend path along that angle until O is no longer the
+ * first object between ship and dest. Repeat for additional obstacles. Points where the obstacle
+ * between the ship and destination are the graph nodes
+ *
+ *
+ *
+ *
+ *
+ */
 
 /*
 pub fn pathfind<T: Entity>(ship: Ship, to: Position, game_map: &GameMap) -> Option<Command> {
@@ -96,42 +119,5 @@ pub fn distance_around_obstacle(start: Position,
     ((total_radius / d_s_o).asin().cos() * d_s_o) +
         ((total_radius / d_o_d).asin().cos() * d_o_d) +
         ((s_o_d_angle - (s_o_tan_angle + d_o_tan2_angle)) * total_radius)
-}
-
-//A* component
-struct Path {
-    start: Position,
-    destination: Position,
-    steps: Vec<Position>,
-    length: f64,
-}
-impl Path {
-    fn heuristic(&self) -> f64 {
-        self.pos().distance_to(&self.destination)
-    }
-
-    fn pos(&self) -> Position {
-        match self.steps.last() {
-            Some(pos) => *pos,
-            None => self.start,
-        }
-    }
-
-    // if true, path is complete
-    pub fn attach_next_step(&self, game_map: &GameMap) -> bool {
-        match game_map.closest_obstacle(&self.pos(), &self.destination, SHIP_RADIUS) {
-            Some((pos, radius)) => {
-                //route around pos
-            },
-            None => {
-                self.steps.push(self.destination);
-                return true
-            }
-        }
-    }
-
-    pub fn cost(&self) -> f64 {
-        self.heuristic() + self.length
-    }
 }
 */
