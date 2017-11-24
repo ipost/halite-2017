@@ -79,16 +79,14 @@ pub fn three_point_angle(p1: Position, p2: Position, p3: Position) -> f64 {
     ((d12.powi(2) + d13.powi(2) - d23.powi(2)) / (2f64 * d12 * d13)).acos()
 }
 
-/* pathfinding idea: take long and short angle around O as two choices, where O is the first object
- * between the ship and its destination. Extend path along that angle until O is no longer the
- * first object between ship and dest. Repeat for additional obstacles. Points where the obstacle
- * between the ship and destination are the graph nodes
- *
- *
- *
- *
- *
- */
+/* pathfinding idea: take long and short angle around O as two choices,
+ * where O is the first object
+ * between the ship and its destination. Extend path along that angle until
+ * O is no longer the
+ * first object between ship and dest. Repeat for additional obstacles.
+ * Points where the obstacle
+ * between the ship and destination are the graph nodes */
+//
 
 /*
 pub fn pathfind<T: Entity>(ship: Ship, to: Position, game_map: &GameMap) -> Option<Command> {

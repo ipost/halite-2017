@@ -83,7 +83,6 @@ impl Decodable for DockingStatus {
 pub struct Ship {
     pub id: i32,
     pub positions: Vec<Position>,
-    // TODO: ^^
     pub hp: i32,
     pub velocity_x: Cell<f64>,
     pub velocity_y: Cell<f64>,
@@ -93,7 +92,6 @@ pub struct Ship {
     pub cooldown: i32,
     pub command: Cell<Option<Command>>,
     pub committed_ships: Cell<i32>,
-    // TODO: make ^ list of ships instead of IDs
 }
 
 impl Ship {
@@ -247,7 +245,7 @@ impl Ship {
         )
     }
 
-    fn collide_helper(&self, other_ship: &Ship, radius: f64) -> bool {
+    fn _collide_helper(&self, other_ship: &Ship, radius: f64) -> bool {
         // TODO: optimize this? requires calculus?
         let step_count = 25;
         let mut step = 1;
@@ -262,6 +260,30 @@ impl Ship {
             step += 1;
         }
         false
+    }
+
+    fn collide_helper(&self, other_ship: &Ship, radius: f64) -> bool {
+        let s1vx = self.velocity_x.get();
+        let s2vx = other_ship.velocity_x.get();
+        let s1vy = self.velocity_y.get();
+        let s2vy = other_ship.velocity_y.get();
+
+        let Position(s1px, s1py) = self.get_position();
+        let Position(s2px, s2py) = other_ship.get_position();
+
+        let a = ((s1vx - s2vx).powi(2) + (s1vy - s2vy).powi(2));
+        let b = (2.0 * (s1px - s2px) * (s1vx - s2vx) + 2.0 * (s1py - s2py) * (s1vy - s2vy));
+        let c = ((s1px - s2px).powi(2) + (s1py - s2py).powi(2) - radius.powi(2));
+
+        let discriminant = b.powi(2) - (4.0 * a * c);
+
+        if discriminant < 0.0 {
+            false
+        } else {
+            let t1 = ((-1.0 * b) - discriminant.sqrt()) / (2.0 * a);
+            let t2 = ((-1.0 * b) + discriminant.sqrt()) / (2.0 * a);
+            (0.0 <= t1 && t1 <= 1.0) || (0.0 <= t2 && t2 <= 1.0)
+        }
     }
 
     pub fn will_collide_with(&self, other_ship: &Ship) -> bool {
@@ -299,6 +321,7 @@ impl Ship {
             })
             .collect();
 
+        // TODO: figure out how to solve probably where my ships clump up and time out
         let will_collide = |v_x, v_y| -> bool {
             // check enemy stationary ships? if not docked and more health?
             let thrust_end = Position(self.get_position().0 + v_x, self.get_position().1 + v_y);
@@ -366,6 +389,13 @@ impl Ship {
     }
 }
 
+// takes a percent x and moves it into the scale of (scale - 1.0)
+// scaled_to(0.75, 0.6) == 0.9
+// scaled_to(0.25, 0.2) == 0.4
+fn scaled_to(scale: f64, x: f64) -> f64 {
+    (x * (1.0 - scale)) + scale
+}
+
 fn dock_value_helper<T: Entity>(entity: &T, planet: &Planet, game_map: &GameMap) -> f64 {
     let planet_pos = planet.get_position();
     let edge_dist_x = if planet_pos.0 > game_map.width() / 2.0 {
@@ -378,7 +408,11 @@ fn dock_value_helper<T: Entity>(entity: &T, planet: &Planet, game_map: &GameMap)
     } else {
         planet_pos.1
     };
-    let edge_dist_modifier = 0.50 + ((((edge_dist_x / game_map.width()) + (edge_dist_y / game_map.height()))) / 2.0);
+    let edge_dist_modifier = scaled_to(
+        0.50,
+        ((((edge_dist_x / game_map.width()) + (edge_dist_y / game_map.height())))),
+    );
+
     let size_factor = match planet.num_docking_spots {
         2 => 1.20,
         3 => 1.15,
@@ -553,6 +587,13 @@ pub trait Entity: Sized {
     fn get_position(&self) -> Position;
     fn get_position_at(&self, t: f64) -> Position;
     fn get_radius(&self) -> f64;
+
+    fn smart_distance_to<T: Entity>(&self, target: &T) -> f64 {
+        // TODO: use pathfinding algo
+        let Position(x1, y1) = self.get_position();
+        let Position(x2, y2) = target.get_position();
+        (x2 - x1).powi(2) + (y2 - y1).powi(2)
+    }
 
     fn distance_to_unsq<T: Entity>(&self, target: &T) -> f64 {
         let Position(x1, y1) = self.get_position();

@@ -38,23 +38,6 @@ macro_rules! print_timing (
         }}
             );
 
-struct Targets<'a> {
-    docked_ships: Vec<&'a Ship>,
-    undocked_ships: Vec<&'a Ship>,
-    planets: Vec<&'a Planet>,
-}
-
-enum Target<'a> {
-    Ship(&'a Ship),
-    Planet(&'a Planet),
-}
-
-impl<'a> Targets<'a> {
-    pub fn closest<T: Entity>(&self, ent: T) -> Target {
-        Target::Ship(self.docked_ships[0])
-    }
-}
-
 #[derive(Debug)]
 enum Move<'a> {
     DockMove(&'a Planet, f64),
@@ -96,7 +79,7 @@ impl<'a> Move<'a> {
     }
 
     pub fn recalculate(&self, ship: &Ship, game_map: &GameMap) -> Move {
-        let (dock_preference, RAID_PREFERENCE, defend_preference, intercept_preference) =
+        let (dock_preference, raid_preference, defend_preference, intercept_preference) =
             if game_map.state.players.len() > 2 {
                 (
                     DOCK_PREFERENCE_4P,
@@ -114,7 +97,7 @@ impl<'a> Move<'a> {
             };
         match self {
             &Move::DockMove(p, v) => Move::DockMove(p, dock_preference * ship.dock_value(p, game_map)),
-            &Move::RaidMove(s, v) => Move::RaidMove(s, RAID_PREFERENCE * ship.raid_value(s)),
+            &Move::RaidMove(s, v) => Move::RaidMove(s, raid_preference * ship.raid_value(s)),
             &Move::DefendMove(s, v) => Move::DefendMove(s, defend_preference * ship.defense_value(s, &game_map)),
             &Move::InterceptMove(s, v) => Move::InterceptMove(s, intercept_preference * ship.intercept_value(s)),
         }
@@ -269,7 +252,7 @@ ShipMoves {{
 
 fn main() {
     // Initialize the game
-    let bot_name = "memetron_420v6";
+    let bot_name = "memetron_420v7";
     let game = Game::new(bot_name);
     // Initialize logging
     let mut logger = Logger::new(game.my_id);
@@ -290,7 +273,7 @@ fn main() {
         let mut command_queue: Vec<Command> = Vec::new();
 
         // set playercount-dependent params
-        let (dock_preference, RAID_PREFERENCE, defend_preference, intercept_preference) =
+        let (dock_preference, raid_preference, defend_preference, intercept_preference) =
             if game_map.state.players.len() > 2 {
                 (
                     DOCK_PREFERENCE_4P,
@@ -307,7 +290,6 @@ fn main() {
                 )
             };
 
-        // Loop over all of our player's ships
         let ships = game_map.get_me().all_ships();
         {
             let ship_ids = ships
@@ -317,11 +299,6 @@ fn main() {
                 .join(" ");
             logger.log(&format!("turn {}, my ships: {}", turn_number, ship_ids));
         }
-
-        // TODO: prefer planets with at least 3 ports and farther from the enemy on
-        // turn one. Also consider how near other planets are--don't want to have
-        // nothing nearby
-        // for quick expansion"
 
         let planets_to_dock: Vec<&Planet> = game_map
             .all_planets()
@@ -397,7 +374,7 @@ fn main() {
                     let mut raid_moves: Vec<Move> = enemy_docked_ships
                         .iter()
                         .map(|enemy_ship| {
-                            Move::RaidMove(*enemy_ship, RAID_PREFERENCE * ship.raid_value(enemy_ship))
+                            Move::RaidMove(*enemy_ship, raid_preference * ship.raid_value(enemy_ship))
                         })
                         .collect();
                     let mut defend_moves: Vec<Move> = enemy_undocked_ships
@@ -636,6 +613,7 @@ fn main() {
 
                         // execute intercept move
                         &Move::InterceptMove(enemy_ship, v) => {
+                            // TODO: move to enemy projected position?
                             let destination = enemy_ship.get_position();
                             let (speed, angle) = ship.route_to(&destination, &game_map);
                             let speed_angle: Option<(i32, i32)> =

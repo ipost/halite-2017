@@ -23,8 +23,8 @@ FILENAME=.bot_tests
 [ -e $FILENAME ] && rm -f $FILENAME
 touch $FILENAME
 BOT_1="target/release/MyBot"
-BOT_2="bots/ipostv5"
-GAMES=40
+BOT_2="bots/ipostv6"
+GAMES=10
 PARALLEL=2
 GAMES=$((GAMES / PARALLEL))
 
@@ -54,6 +54,8 @@ echo "Test time: $((END_TIME - START_TIME))s"
 
 echo "Player #0 won $(cat .bot_tests | grep "Player #0.\+came in rank #1" | wc -l) times out of $((GAMES * PARALLEL)) games"
 echo "Player #1 won $(cat .bot_tests | grep "Player #1.\+came in rank #1" | wc -l) times out of $((GAMES * PARALLEL)) games"
+echo "Player #2 won $(cat .bot_tests | grep "Player #2.\+came in rank #1" | wc -l) times out of $((GAMES * PARALLEL)) games"
+echo "Player #3 won $(cat .bot_tests | grep "Player #3.\+came in rank #1" | wc -l) times out of $((GAMES * PARALLEL)) games"
 echo "$(ls *-*.log 2> /dev/null | wc -l) Failures found"
 echo -ne "\0007"
 #say "test complete"

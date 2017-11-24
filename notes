@@ -7,13 +7,115 @@ sqrt(
   ) < radius
 
 
-((s1.px + (t * s1.vx)) - (s2.px + (t * s2.vx)))^2 + ((s1.py + (t * s1.vy)) - (s2.py + (t * s2.vy)))^2 < radius^2
-0 <= t <= 1
-((A     + (t * B    )) - (C     + (t * D    )))^2 + ((E     + (t * F    )) - (G     + (t *     H)))^2 < R^2
-0 <= t <= 1
+d(t) = sqrt(((s1.px + (t * s1.vx)) - (s2.px + (t * s2.vx)))^2 + ((s1.py + (t * s1.vy)) - (s2.py + (t * s2.vy)))^2)
+A = s1.px
+B = s1.vx
+C = s2.px
+D = s2.vx
+E = s1.py
+F = s1.vy
+G = s2.py
+H = s2.vy
+
+d(t) = sqrt(((A     + (t * B    )) - (C     + (t * D    )))^2 + ((E     + (t * F    )) - (G     + (t * H    )))^2)
+d(t) = sqrt(
+    ((A     + (t * B    )) - (C     + (t * D    )))^2 +
+    ((E     + (t * F    )) - (G     + (t * H    )))^2
+)
+d(t) = sqrt(
+    ((A + tB) - (C + tD))^2 +
+    ((E + tF) - (G + tH))^2
+)
+d(t) = sqrt(
+    ((A + tB) - (C + tD))^2 +
+    ((E + tF) - (G + tH))^2
+)
+d(t) = sqrt(
+    (A + tB - C - tD)^2 +
+    (E + tF - G - tH)^2
+)
+d(t) = sqrt(
+    (A + t(B - D) - C)^2 +
+    (E + t(F - H) - G)^2
+)
+d(t) = sqrt(
+    (t(B - D) + (A - C))^2 +
+    (t(F - H) + (E - G))^2
+)
+P = B - D
+Q = A - C
+R = F - H
+S - E - G
+d(t) = sqrt(
+    (tP + Q)^2 +
+    (tR + S)^2
+)
+d(t) = sqrt(
+    (tP + Q)^2 +
+    (tR + S)^2
+)
+d(t) = sqrt(
+    t^2 * P^2 + 2QtP + Q^2 + 
+    t^2 * R^2 + 2StR + S^2
+)
+d(t) = sqrt(
+    t^2 * (P^2 + R^2) + t(2QP + 2SR) + Q^2 + S^2
+)
+d(t)^2 = t^2 * (P^2 + R^2) + t(2QP + 2SR) + Q^2 + S^2
+a = P^2 + R^2
+b = 2QP + 2SR
+c = Q^2 + S^2
+
+t_closest = -b/(2a)
+t_closest = -(2QP + 2SR)/(2(P^2 + R^2))
+
+P = B - D
+Q = A - C
+R = F - H
+S = E - G
+P = B - D
+Q = A - C
+R = F - H
+S = E - G
+
+P = s1.vx - s2.vx
+Q = s1.px - s2.px
+R = s1.vy - s2.vy
+S = s1.py - s2.py
+P = s1.vx - s2.vx
+Q = s1.px - s2.px
+R = s1.vy - s2.vy
+S = s1.py - s2.py
+
+t_closest = -(2(A - C)(B - D) + 2(E - G)(F - H))/(2((B - D)^2 + (F - H)^2))
+t_closest = -(2(A - C)(B - D) + 2(E - G)(F - H))/(2((B - D)^2 + (F - H)^2))
+A = s1.px
+B = s1.vx
+C = s2.px
+D = s2.vx
+E = s1.py
+F = s1.vy
+G = s2.py
+H = s2.vy
+t_closest = -(2(s1.px - s2.px)(s1.vx - s2.vx) + 2(s1.py - s2.py)(s1.vy - s2.vy))/(2((s1.vx - s2.vx)^2 + (s1.vy - s2.vy)^2))
 
 
-for cases where knowing the distance between things is not important, but knowing that it is less than some quantity is: instead of working with the actual distance between positions, comparison could be done against the square of the distance. would avoid potentially expensive sqrt() operation in favor of squaring
+di = distance of interest, collision distance, sum of 2 ships' radii
+0 = t^2 * (P^2 + R^2) + t(2QP + 2SR) + Q^2 + S^2 - di^2
+a = (P^2 + R^2)
+b = (2QP + 2SR)
+c = (Q^2 + S^2 - di^2)
+
+a = ((s1.vx - s2.vx)^2 + (s1.vy - s2.vy)^2)
+b = (2(s1.px - s2.px)(s1.vx - s2.vx) + 2(s1.py - s2.py)(s1.vy - s2.vy))
+c = ((s1.px - s2.px)^2 + (s1.py - s2.py)^2 - di^2)
+
+determinant = b^2 - 4ac
+determinant = (2(s1.px - s2.px)(s1.vx - s2.vx) + 2(s1.py - s2.py)(s1.vy - s2.vy))^2 - 4((s1.vx - s2.vx)^2 + (s1.vy - s2.vy)^2)((s1.px - s2.px)^2 + (s1.py - s2.py)^2 - di^2)
+
+
+
+
 
 
 
