@@ -39,6 +39,14 @@ macro_rules! print_timing (
             );
 
 #[derive(Debug)]
+struct Configs {
+    dock_preference: f64,
+    raid_preference: f64,
+    defend_preference: f64,
+    intercept_preference: f64,
+}
+
+#[derive(Debug)]
 enum MoveType {
     DockMove,
     RaidMove,
@@ -74,40 +82,33 @@ impl<'a> Move<'a> {
         }
     }
 
-    pub fn commitment(&self) -> i32 {
+    pub fn move_type(&self) -> MoveType {
         match self {
-            //&Move::DockMove(p, v) => p.committed_ships.get(),
-            &Move::DockMove(p, v) => 0,
-            &Move::RaidMove(s, v) => s.committed_ships.get(),
-            &Move::DefendMove(s, v) => s.committed_ships.get(),
-
-            // do not intercept until we defend and raid
-            &Move::InterceptMove(s, v) => s.committed_ships.get() + 1,
+            &Move::DockMove(p, v) => MoveType::DockMove,
+            &Move::RaidMove(s, v) => MoveType::RaidMove,
+            &Move::DefendMove(s, v) => MoveType::DefendMove,
+            &Move::InterceptMove(s, v) => MoveType::InterceptMove,
         }
     }
 
-    pub fn recalculate(&mut self, ship: &Ship, game_map: &GameMap) {
-        let (dock_preference, raid_preference, defend_preference, intercept_preference) =
-            if game_map.state.players.len() > 2 {
-                (
-                    DOCK_PREFERENCE_4P,
-                    RAID_PREFERENCE_4P,
-                    DEFEND_PREFERENCE_4P,
-                    INTERCEPT_PREFERENCE_4P,
-                )
-            } else {
-                (
-                    DOCK_PREFERENCE_2P,
-                    RAID_PREFERENCE_2P,
-                    DEFEND_PREFERENCE_2P,
-                    INTERCEPT_PREFERENCE_2P,
-                )
-            };
+    // pub fn commitment(&self) -> i32 {
+    //    match self {
+    //        //&Move::DockMove(p, v) => p.committed_ships.get(),
+    //        &Move::DockMove(p, v) => 0,
+    //        &Move::RaidMove(s, v) => s.committed_ships.get(),
+    //        &Move::DefendMove(s, v) => s.committed_ships.get(),
+
+    //        // do not intercept until we defend and raid
+    //        &Move::InterceptMove(s, v) => s.committed_ships.get() + 1,
+    //    }
+    // }
+
+    pub fn recalculate(&mut self, ship: &Ship, game_map: &GameMap, configs: &Configs) {
         match self {
-            &mut Move::DockMove(p, ref mut v) => *v = dock_preference * ship.dock_value(p, game_map),
-            &mut Move::RaidMove(s, ref mut v) => *v = raid_preference * ship.raid_value(s),
-            &mut Move::DefendMove(s, ref mut v) => *v = defend_preference * ship.defense_value(s, &game_map),
-            &mut Move::InterceptMove(s, ref mut v) => *v = intercept_preference * ship.intercept_value(s),
+            &mut Move::DockMove(p, ref mut v) => *v = configs.dock_preference * ship.dock_value(p, game_map),
+            &mut Move::RaidMove(s, ref mut v) => *v = configs.raid_preference * ship.raid_value(s),
+            &mut Move::DefendMove(s, ref mut v) => *v = configs.defend_preference * ship.defense_value(s, &game_map),
+            &mut Move::InterceptMove(s, ref mut v) => *v = configs.intercept_preference * ship.intercept_value(s),
         }
     }
 }
@@ -133,34 +134,35 @@ impl<'a> ShipMoves<'a> {
         planets_to_dock: &Vec<&'b Planet>,
         enemy_docked_ships: &Vec<&'b Ship>,
         enemy_undocked_ships: &Vec<&'b Ship>,
+        configs: &Configs,
     ) -> ShipMoves<'b> {
         let mut dock_moves: Vec<Move> = planets_to_dock
-            .iter()
-            .map(|p| Move::DockMove(*p, 0.0))
+            .into_iter()
+            .map(|p| Move::DockMove(p, 0.0))
             .collect();
         let mut raid_moves: Vec<Move> = enemy_docked_ships
-            .iter()
-            .map(|enemy_ship| Move::RaidMove(*enemy_ship, 0.0))
+            .into_iter()
+            .map(|enemy_ship| Move::RaidMove(enemy_ship, 0.0))
             .collect();
         let mut defend_moves: Vec<Move> = enemy_undocked_ships
-            .iter()
-            .map(|enemy_ship| Move::DefendMove(*enemy_ship, 0.0))
+            .into_iter()
+            .map(|enemy_ship| Move::DefendMove(enemy_ship, 0.0))
             .collect();
         let mut intercept_moves: Vec<Move> = enemy_undocked_ships
-            .iter()
-            .map(|enemy_ship| Move::InterceptMove(*enemy_ship, 0.0))
+            .into_iter()
+            .map(|enemy_ship| Move::InterceptMove(enemy_ship, 0.0))
             .collect();
         for d_m in &mut dock_moves {
-            d_m.recalculate(ship, &game_map);
+            d_m.recalculate(ship, &game_map, &configs);
         }
         for r_m in &mut raid_moves {
-            r_m.recalculate(ship, &game_map);
+            r_m.recalculate(ship, &game_map, &configs);
         }
         for d_m in &mut defend_moves {
-            d_m.recalculate(ship, &game_map);
+            d_m.recalculate(ship, &game_map, &configs);
         }
         for i_m in &mut intercept_moves {
-            i_m.recalculate(ship, &game_map);
+            i_m.recalculate(ship, &game_map, &configs);
         }
         let deqd_dock_moves = vec![];
         let deqd_raid_moves = vec![];
@@ -184,16 +186,6 @@ impl<'a> ShipMoves<'a> {
         s_m
     }
 
-    pub fn recalculate_for_ship_change(&mut self, target_ship: &Ship, game_map: &GameMap) {
-        for m in &mut self.raid_moves {
-            if let &mut Move::RaidMove(s, v) = m {
-                if s.id == target_ship.id {
-                    //m.recalculate();
-                }
-            }
-        }
-    }
-
     // moves must be sorted by value within their type before calling
     pub fn update_best_move(&mut self) {
         match self.best_move {
@@ -202,7 +194,6 @@ impl<'a> ShipMoves<'a> {
             MoveType::DefendMove => self.deqd_defend_moves.push(self.defend_moves.remove(0)),
             MoveType::InterceptMove => self.deqd_intercept_moves
                 .push(self.intercept_moves.remove(0)),
-            _ => assert_unreachable!(),
         };
         self.refresh_best_move();
     }
@@ -223,79 +214,45 @@ impl<'a> ShipMoves<'a> {
         }
     }
 
+    pub fn recalculate_all_moves(&mut self, game_map: &GameMap, configs: &Configs) {
+        for d_m in &mut self.dock_moves {
+            d_m.recalculate(self.ship, &game_map, &configs);
+        }
+        for r_m in &mut self.raid_moves {
+            r_m.recalculate(self.ship, &game_map, &configs);
+        }
+        for d_m in &mut self.defend_moves {
+            d_m.recalculate(self.ship, &game_map, &configs);
+        }
+        for i_m in &mut self.intercept_moves {
+            i_m.recalculate(self.ship, &game_map, &configs);
+        }
+    }
+
     pub fn refresh_best_move(&mut self) {
         self.best_move = {
-            let mut moves: Vec<Option<&Move>> = Vec::with_capacity(3);
-            moves.push(self.dock_moves.first());
-            moves.push(self.raid_moves.first());
-            moves.push(self.defend_moves.first());
-            moves.push(self.intercept_moves.first());
-
-            let best_move = moves
-                .into_iter()
+            vec![
+                self.dock_moves.first(),
+                self.raid_moves.first(),
+                self.defend_moves.first(),
+                self.intercept_moves.first(),
+            ].into_iter()
                 .filter(|m| m.is_some())
                 .map(|m| m.unwrap())
                 .min_by(|move1, move2| {
                     move1.value().partial_cmp(&move2.value()).unwrap()
-                });
-
-            match best_move.unwrap() {
-                &Move::DockMove(p, v) => MoveType::DockMove,
-                &Move::RaidMove(s, v) => MoveType::RaidMove,
-                &Move::DefendMove(s, v) => MoveType::DefendMove,
-                &Move::InterceptMove(s, v) => MoveType::InterceptMove,
-            }
+                })
+                .unwrap()
+                .move_type()
         };
     }
 
     pub fn sort_moves(&mut self) {
-        self.dock_moves.sort_by(|dock_move1, dock_move2| {
-            let dm = match dock_move1 {
-                &Move::DockMove(p, v) => v,
-                _ => assert_unreachable!(),
-            }.partial_cmp(&match dock_move2 {
-                &Move::DockMove(p, v) => v,
-                _ => assert_unreachable!(),
-            });
-            dm.unwrap()
-        });
-
-        self.raid_moves.sort_by(|raid_move1, raid_move2| {
-            let (ship1, v1) = match raid_move1 {
-                &Move::RaidMove(s, v) => (s, v),
-                _ => assert_unreachable!(),
-            };
-            let (ship2, v2) = match raid_move2 {
-                &Move::RaidMove(s, v) => (s, v),
-                _ => assert_unreachable!(),
-            };
-            v1.partial_cmp(&v2).unwrap()
-        });
-
-        self.defend_moves.sort_by(|defend_move1, defend_move2| {
-            let (ship1, v1) = match defend_move1 {
-                &Move::DefendMove(s, v) => (s, v),
-                _ => assert_unreachable!(),
-            };
-            let (ship2, v2) = match defend_move2 {
-                &Move::DefendMove(s, v) => (s, v),
-                _ => assert_unreachable!(),
-            };
-            v1.partial_cmp(&v2).unwrap()
-        });
-
-        self.intercept_moves
-            .sort_by(|intercept_move1, intercept_move2| {
-                let (ship1, v1) = match intercept_move1 {
-                    &Move::InterceptMove(s, v) => (s, v),
-                    _ => assert_unreachable!(),
-                };
-                let (ship2, v2) = match intercept_move2 {
-                    &Move::InterceptMove(s, v) => (s, v),
-                    _ => assert_unreachable!(),
-                };
-                v1.partial_cmp(&v2).unwrap()
-            });
+        let sort_fn = |m1: &Move, m2: &Move| -> Ordering { m1.value().partial_cmp(&m2.value()).unwrap() };
+        self.dock_moves.sort_by(&sort_fn);
+        self.raid_moves.sort_by(&sort_fn);
+        self.defend_moves.sort_by(&sort_fn);
+        self.intercept_moves.sort_by(&sort_fn);
     }
 
     pub fn remaining_moves(&self) -> usize {
@@ -308,7 +265,6 @@ impl<'a> ShipMoves<'a> {
             MoveType::RaidMove => self.raid_moves.first().unwrap(),
             MoveType::DefendMove => self.defend_moves.first().unwrap(),
             MoveType::InterceptMove => self.intercept_moves.first().unwrap(),
-            _ => assert_unreachable!(),
         }
     }
 
@@ -384,6 +340,12 @@ fn main() {
                     INTERCEPT_PREFERENCE_2P,
                 )
             };
+        let configs = Configs {
+            dock_preference,
+            raid_preference,
+            defend_preference,
+            intercept_preference,
+        };
 
         let ships = game_map.get_me().all_ships();
         {
@@ -456,6 +418,7 @@ fn main() {
                     &planets_to_dock,
                     &enemy_docked_ships,
                     &enemy_undocked_ships,
+                    &configs,
                 )
             })
             .collect();
@@ -470,18 +433,7 @@ fn main() {
             // be if the commitment level of the move target changed
             for s_m in &mut all_ship_moves {
                 s_m.recombine_deqs();
-                for d_m in &mut s_m.dock_moves {
-                    d_m.recalculate(s_m.ship, &game_map);
-                }
-                for r_m in &mut s_m.raid_moves {
-                    r_m.recalculate(s_m.ship, &game_map);
-                }
-                for d_m in &mut s_m.defend_moves {
-                    d_m.recalculate(s_m.ship, &game_map);
-                }
-                for i_m in &mut s_m.intercept_moves {
-                    i_m.recalculate(s_m.ship, &game_map);
-                }
+                s_m.recalculate_all_moves(&game_map, &configs);
                 s_m.sort_moves();
                 s_m.refresh_best_move();
             }
@@ -492,6 +444,8 @@ fn main() {
                     // find the current ship which has the best move to make
                     let ship_to_move = all_ship_moves
                         .iter()
+                        // ?????
+                        //.filter(|s_m| s_m.remaining_moves() > 0)
                         .filter(|s_m| s_m.remaining_moves() > 1)
                         .min_by(|s_m1, s_m2| {
                             s_m1.best_move()
@@ -503,223 +457,14 @@ fn main() {
                         // all ships_to_move are out of possible moves
                         break;
                     }
-                    // logger.log(&format!(
-                    //     "ship_to_move: {}",
-                    //     ship_to_move.unwrap().as_string()
-                    // ));
-                    let mut ship_to_move = ship_to_move.unwrap();
-                    let ship = ship_to_move.ship;
-                    match ship_to_move.best_move() {
-                        // execute dock move
-                        &Move::DockMove(planet, v) => {
-                            let destination = &ship.closest_point_to(planet, 3.0);
-                            // check if nearby enemies with commitment == 0
-                            // TODO: maybe move this to dock_value
-                            let nearby_enemies = enemy_undocked_ships.iter().any(|e_s| {
-                                e_s.distance_to(destination) < (DOCK_TURNS * MAX_SPEED * 2) as f64
-                                    && e_s.committed_ships.get() == 0
-                            });
-
-                            // if all dock spots are claimed no command
-                            // maybe move this to dock_value
-                            if (planet.num_docking_spots
-                                - (planet.committed_ships.get() + planet.docked_ships.len() as i32))
-                                == 0
-                            //|| nearby_enemies
-                            {
-                                (ship.id, None)
-
-                            // if close enough to dock
-                            } else if (planet.turns_until_spawn() as f64)
-                                < (ship.distance_to_surface(planet) + DOCK_RADIUS) / MAX_SPEED as f64
-                            {
-                                (ship.id, None)
-                            } else if ship.in_dock_range(planet) {
-                                planet.committed_ships.set(planet.committed_ships.get() + 1);
-                                logger.log(&format!("  Ship {} docking to {}", ship.id, planet.id));
-                                (ship.id, Some(ship.dock(planet)))
-
-                            // otherwise, fly towards planet
-                            } else {
-                                let destination = &ship.closest_point_to(planet, 3.0);
-                                let (speed, angle) = ship.route_to(destination, &game_map);
-                                let speed_angle: Option<(i32, i32)> = if attempted_commands.get(&ship.id).unwrap() < &25
-                                {
-                                    ship.safely_adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS)
-                                } else {
-                                    ship.adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS)
-                                };
-                                match speed_angle {
-                                    Some((speed, angle)) => {
-                                        logger.log(&format!(
-                                            "  ship {} : speed: {}, angle: {}, target: {}, target planet: {}",
-                                            ship.id,
-                                            speed,
-                                            angle,
-                                            destination,
-                                            planet.id
-                                        ));
-                                        planet.increment_committed_ships();
-                                        (ship.id, Some(ship.thrust(speed, angle)))
-                                    }
-                                    _ => {
-                                        logger.log(&format!(
-                                            "  --- failed to find path to planet {} for ship {}",
-                                            planet.id,
-                                            ship.id
-                                        ));
-                                        (ship.id, None)
-                                    }
-                                }
-                            }
-                        }
-
-                        // execute raid move
-                        &Move::RaidMove(enemy_ship, v) => if ship.distance_to(enemy_ship) < WEAPON_RADIUS / 2.0 {
-                            // TODO: run away when attacked?
-                            logger.log(&format!(
-                                "  ship {} will remain {} to attack {}",
-                                ship.id,
-                                ship.docking_status,
-                                enemy_ship.id
-                            ));
-                            (ship.id, Some(Command::Stay()))
-                        } else {
-                            let destination = &ship.closest_point_to(enemy_ship, WEAPON_RADIUS * 0.95);
-                            let (speed, angle) = ship.route_to(destination, &game_map);
-                            let speed_angle: Option<(i32, i32)> = if attempted_commands.get(&ship.id).unwrap() < &25 {
-                                ship.safely_adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS)
-                            } else {
-                                ship.adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS)
-                            };
-                            // maybe don't safely adjust after hitting some threshold of attempted
-                            // commands? or maybe if surrounded by too many friendlies
-                            // or maybe try taking the long way around the obstacle, if any
-                            match speed_angle {
-                                Some((speed, angle)) => {
-                                    if speed == 0 {
-                                        logger.log(&format!(
-                                            "This shouldn't happen. The ship should remain to attack instead if it's that close. I think?"
-                                        ));
-                                    }
-                                    logger.log(&format!(
-                                        "  ship {} : speed: {}, angle: {}, target: {}, target ship: {}",
-                                        ship.id,
-                                        speed,
-                                        angle,
-                                        destination,
-                                        enemy_ship.id
-                                    ));
-                                    enemy_ship.increment_committed_ships();
-                                    (ship.id, Some(ship.thrust(speed, angle)))
-                                }
-                                _ => {
-                                    logger.log(&format!(
-                                        "  --- failed to find path to ship {} for ship {}",
-                                        enemy_ship.id,
-                                        ship.id
-                                    ));
-                                    (ship.id, None)
-                                }
-                            }
-                        },
-
-                        // execute defend move
-                        &Move::DefendMove(enemy_ship, v) => {
-                            if my_docked_ships.len() == 0 {
-                                // if we get here, it probably means we have no docked ships and there
-                                // aren't any good attack or dock targets. Probably screwed
-                                (ship.id, Some(Command::Stay()))
-                            } else {
-                                let ship_to_defend = enemy_ship.nearest_entity(my_docked_ships.as_slice());
-
-                                // kamikaze behavior?
-                                if enemy_ship.hp - 100 > ship.hp {
-                                    let destination = enemy_ship.get_position();
-                                    let (speed, angle) = ship.route_to(&destination, &game_map);
-                                    logger.log(&format!(
-                                        "  ship {} : speed: {}, angle: {}, target: {}, defending {} from: {} via KAMIKAZE",
-                                        ship.id,
-                                        speed,
-                                        angle,
-                                        destination,
-                                        ship_to_defend.id,
-                                        enemy_ship.id
-                                    ));
-                                    enemy_ship.increment_committed_ships();
-                                    (ship.id, Some(ship.thrust(speed, angle)))
-                                } else {
-                                    let (dx, dy) = (
-                                        (ship_to_defend.get_position().0 - enemy_ship.get_position().0),
-                                        (ship_to_defend.get_position().1 - enemy_ship.get_position().1),
-                                    );
-                                    let magnitude = f64::sqrt(dx.powi(2) + dy.powi(2));
-                                    let destination = Position(
-                                        (ship_to_defend.get_position().0 - (dx / magnitude)),
-                                        (ship_to_defend.get_position().1 - (dy / magnitude)),
-                                    );
-                                    let (speed, angle) = ship.route_to(&destination, &game_map);
-                                    let speed_angle: Option<(i32, i32)> =
-                                        ship.adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS);
-                                    match speed_angle {
-                                        Some((speed, angle)) => {
-                                            logger.log(&format!(
-                                                "  ship {} : speed: {}, angle: {}, target: {}, defending {} from: {}",
-                                                ship.id,
-                                                speed,
-                                                angle,
-                                                destination,
-                                                ship_to_defend.id,
-                                                enemy_ship.id
-                                            ));
-                                            enemy_ship.increment_committed_ships();
-                                            (ship.id, Some(ship.thrust(speed, angle)))
-                                        }
-                                        _ => {
-                                            logger.log(&format!(
-                                                "  --- failed to find path to ship {} for ship {}",
-                                                enemy_ship.id,
-                                                ship.id
-                                            ));
-                                            (ship.id, None)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // execute intercept move
-                        &Move::InterceptMove(enemy_ship, v) => {
-                            // TODO: move to enemy projected position?
-                            let destination = enemy_ship.get_position();
-                            let (speed, angle) = ship.route_to(&destination, &game_map);
-                            let speed_angle: Option<(i32, i32)> =
-                                ship.adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS);
-                            match speed_angle {
-                                Some((speed, angle)) => {
-                                    logger.log(&format!(
-                                        "  ship {} : speed: {}, angle: {}, target: {}, intercepting {}",
-                                        ship.id,
-                                        speed,
-                                        angle,
-                                        destination,
-                                        enemy_ship.id
-                                    ));
-                                    enemy_ship.increment_committed_ships();
-                                    (ship.id, Some(ship.thrust(speed, angle)))
-                                }
-                                _ => {
-                                    logger.log(&format!(
-                                        "  --- failed to find path to ship {} for ship {}",
-                                        enemy_ship.id,
-                                        ship.id
-                                    ));
-                                    (ship.id, None)
-                                }
-                            }
-                        }
-                        _ => assert_unreachable!(),
-                    }
+                    try_make_move(
+                        ship_to_move.unwrap(),
+                        &game_map,
+                        &enemy_undocked_ships,
+                        &my_docked_ships,
+                        &mut attempted_commands,
+                        &mut logger,
+                    )
                 };
 
                 match command {
@@ -743,11 +488,8 @@ fn main() {
                     }
                     None => {
                         *attempted_commands.get_mut(&ship_id).unwrap() += 1;
-                        if attempted_commands[&ship_id] >= (13000 / ship_count) as i32 {
-                            logger.log(&format!(
-                                "  ship {} will Stay, move not found",
-                                ship_id,
-                            ));
+                        if attempted_commands[&ship_id] >= (12000 / ship_count) as i32 {
+                            logger.log(&format!("  ship {} will Stay, move not found", ship_id,));
                             game_map
                                 .get_ship(ship_id)
                                 .command
@@ -779,4 +521,221 @@ fn main() {
             start_time.to(PreciseTime::now())
         ));
     }
+}
+
+fn try_make_move(
+    ship_to_move: &ShipMoves,
+    game_map: &GameMap,
+    enemy_undocked_ships: &Vec<&Ship>,
+    my_docked_ships: &Vec<&Ship>,
+    attempted_commands: &mut HashMap<i32, i32>,
+    logger: &mut Logger,
+) -> (i32, Option<Command>) {
+    let ship = ship_to_move.ship;
+    let command = match ship_to_move.best_move() {
+        // execute dock move
+        &Move::DockMove(planet, v) => {
+            let destination = &ship.closest_point_to(planet, 3.0);
+            // check if nearby enemies with commitment == 0
+            // TODO: maybe move this to dock_value
+            let nearby_enemies = enemy_undocked_ships.iter().any(|e_s| {
+                e_s.distance_to(destination) < (DOCK_TURNS * MAX_SPEED * 2) as f64 && e_s.committed_ships.get() == 0
+            });
+
+            // if all dock spots are claimed no command
+            // maybe move this to dock_value
+            if (planet.num_docking_spots - (planet.committed_ships.get() + planet.docked_ships.len() as i32)) == 0
+            //|| nearby_enemies
+            {
+                None
+
+            // if close enough to dock
+            } else if (planet.turns_until_spawn() as f64)
+                < (ship.distance_to_surface(planet) + DOCK_RADIUS) / MAX_SPEED as f64
+            {
+                None
+            } else if ship.in_dock_range(planet) {
+                planet.committed_ships.set(planet.committed_ships.get() + 1);
+                logger.log(&format!("  Ship {} docking to {}", ship.id, planet.id));
+                Some(ship.dock(planet))
+
+            // otherwise, fly towards planet
+            } else {
+                let destination = &ship.closest_point_to(planet, 3.0);
+                let (speed, angle) = ship.route_to(destination, &game_map);
+                let speed_angle: Option<(i32, i32)> = if attempted_commands.get(&ship.id).unwrap() < &25 {
+                    ship.safely_adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS)
+                } else {
+                    ship.adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS)
+                };
+                match speed_angle {
+                    Some((speed, angle)) => {
+                        logger.log(&format!(
+                            "  ship {} : speed: {}, angle: {}, target: {}, target planet: {}",
+                            ship.id,
+                            speed,
+                            angle,
+                            destination,
+                            planet.id
+                        ));
+                        planet.increment_committed_ships();
+                        Some(ship.thrust(speed, angle))
+                    }
+                    _ => {
+                        logger.log(&format!(
+                            "  --- failed to find path to planet {} for ship {}",
+                            planet.id,
+                            ship.id
+                        ));
+                        None
+                    }
+                }
+            }
+        }
+
+        // execute raid move
+        &Move::RaidMove(enemy_ship, v) => if ship.distance_to(enemy_ship) < WEAPON_RADIUS / 2.0 {
+            // TODO: run away when attacked?
+            logger.log(&format!(
+                "  ship {} will remain {} to attack {}",
+                ship.id,
+                ship.docking_status,
+                enemy_ship.id
+            ));
+            Some(Command::Stay())
+        } else {
+            let destination = &ship.closest_point_to(enemy_ship, WEAPON_RADIUS * 0.95);
+            let (speed, angle) = ship.route_to(destination, &game_map);
+            let speed_angle: Option<(i32, i32)> = if attempted_commands.get(&ship.id).unwrap() < &25 {
+                ship.safely_adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS)
+            } else {
+                ship.adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS)
+            };
+            // maybe don't safely adjust after hitting some threshold of attempted
+            // commands? or maybe if surrounded by too many friendlies
+            // or maybe try taking the long way around the obstacle, if any
+            match speed_angle {
+                Some((speed, angle)) => {
+                    if speed == 0 {
+                        logger.log(&format!(
+                            "This shouldn't happen. The ship should remain to attack instead if it's that close. I think?"
+                        ));
+                    }
+                    logger.log(&format!(
+                        "  ship {} : speed: {}, angle: {}, target: {}, target ship: {}",
+                        ship.id,
+                        speed,
+                        angle,
+                        destination,
+                        enemy_ship.id
+                    ));
+                    enemy_ship.increment_committed_ships();
+                    Some(ship.thrust(speed, angle))
+                }
+                _ => {
+                    logger.log(&format!(
+                        "  --- failed to find path to ship {} for ship {}",
+                        enemy_ship.id,
+                        ship.id
+                    ));
+                    None
+                }
+            }
+        },
+
+        // execute defend move
+        &Move::DefendMove(enemy_ship, v) => {
+            if my_docked_ships.len() == 0 {
+                // if we get here, it probably means we have no docked ships and there
+                // aren't any good attack or dock targets. Probably screwed
+                Some(Command::Stay())
+            } else {
+                let ship_to_defend = enemy_ship.nearest_entity(my_docked_ships.as_slice());
+
+                // kamikaze behavior?
+                if enemy_ship.hp - 100 > ship.hp {
+                    let destination = enemy_ship.get_position();
+                    let (speed, angle) = ship.route_to(&destination, &game_map);
+                    logger.log(&format!(
+                        "  ship {} : speed: {}, angle: {}, target: {}, defending {} from: {} via KAMIKAZE",
+                        ship.id,
+                        speed,
+                        angle,
+                        destination,
+                        ship_to_defend.id,
+                        enemy_ship.id
+                    ));
+                    enemy_ship.increment_committed_ships();
+                    Some(ship.thrust(speed, angle))
+                } else {
+                    let (dx, dy) = (
+                        (ship_to_defend.get_position().0 - enemy_ship.get_position().0),
+                        (ship_to_defend.get_position().1 - enemy_ship.get_position().1),
+                    );
+                    let magnitude = f64::sqrt(dx.powi(2) + dy.powi(2));
+                    let destination = Position(
+                        (ship_to_defend.get_position().0 - (dx / magnitude)),
+                        (ship_to_defend.get_position().1 - (dy / magnitude)),
+                    );
+                    let (speed, angle) = ship.route_to(&destination, &game_map);
+                    let speed_angle: Option<(i32, i32)> = ship.adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS);
+                    match speed_angle {
+                        Some((speed, angle)) => {
+                            logger.log(&format!(
+                                "  ship {} : speed: {}, angle: {}, target: {}, defending {} from: {}",
+                                ship.id,
+                                speed,
+                                angle,
+                                destination,
+                                ship_to_defend.id,
+                                enemy_ship.id
+                            ));
+                            enemy_ship.increment_committed_ships();
+                            Some(ship.thrust(speed, angle))
+                        }
+                        _ => {
+                            logger.log(&format!(
+                                "  --- failed to find path to ship {} for ship {}",
+                                enemy_ship.id,
+                                ship.id
+                            ));
+                            None
+                        }
+                    }
+                }
+            }
+        }
+
+        // execute intercept move
+        &Move::InterceptMove(enemy_ship, v) => {
+            // TODO: move to enemy projected position?
+            let destination = enemy_ship.get_position();
+            let (speed, angle) = ship.route_to(&destination, &game_map);
+            let speed_angle: Option<(i32, i32)> = ship.adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS);
+            match speed_angle {
+                Some((speed, angle)) => {
+                    logger.log(&format!(
+                        "  ship {} : speed: {}, angle: {}, target: {}, intercepting {}",
+                        ship.id,
+                        speed,
+                        angle,
+                        destination,
+                        enemy_ship.id
+                    ));
+                    enemy_ship.increment_committed_ships();
+                    Some(ship.thrust(speed, angle))
+                }
+                _ => {
+                    logger.log(&format!(
+                        "  --- failed to find path to ship {} for ship {}",
+                        enemy_ship.id,
+                        ship.id
+                    ));
+                    None
+                }
+            }
+        }
+        _ => assert_unreachable!(),
+    };
+    (ship.id, command)
 }
