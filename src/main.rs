@@ -463,14 +463,7 @@ fn main() {
         let mut commands_issued = 0;
         let mut break_command = -1;
         while game_map.my_ships().iter().any(|s| !s.commanded()) && break_command != commands_issued {
-            if turn_number == 120 {
-                logger.log(&format!("  shipz: {:#?}",
-                                    game_map.my_ships().into_iter().filter(|s| !s.commanded()).collect::<Vec<&Ship>>().len()
-                                    ));
-            }
-            logger.log(&format!("  commands_issued: {} break_command: {}", commands_issued, break_command));
             break_command = commands_issued.clone();
-            logger.log(&format!("  after set: commands_issued: {} break_command: {}", commands_issued, break_command));
 
             // next: only recalc if the move would have been affected, which right now
             // should just

@@ -20,7 +20,8 @@ SIZE_X=$((SIZE_Y * 3 / 2 ))
 
 #./halite_osx -t -s 476480283 -d "150 100"  "valgrind --tool=callgrind --log-file=lmao target/debug/MyBot" "bots/ipostv5"
 #./halite_osx -t -s 476480283 -d "210 140"  "valgrind --tool=callgrind --log-file=lmao target/debug/MyBot" "bots/ipostv5"
-./halite_osx -t -s 476480285 -d "358 239"  "target/release/MyBot" "bots/ipostv6"
+#./halite_osx -t -s 476480285 -d "358 239"  "target/release/MyBot" "bots/ipostv6"
+./halite_osx -s 1479481806 -d "318 212"  "target/release/MyBot" "bots/ipostv6" "bots/ipostv6" "bots/ipostv6"
 
 rg "PT" log_0.txt | sort -r | head -n 15 >> turn_timings
 echo "" >> turn_timings

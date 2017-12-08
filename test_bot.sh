@@ -24,7 +24,7 @@ FILENAME=.bot_tests
 touch $FILENAME
 BOT_1="target/release/MyBot"
 BOT_2="bots/ipostv6"
-GAMES=10
+GAMES=20
 PARALLEL=2
 GAMES=$((GAMES / PARALLEL))
 
@@ -52,10 +52,14 @@ echo "Test time: $((END_TIME - START_TIME))s"
 #mv replays/*.hlt .
 #rm -f *.hlt
 
-echo "Player #0 won $(cat .bot_tests | grep "Player #0.\+came in rank #1" | wc -l) times out of $((GAMES * PARALLEL)) games"
-echo "Player #1 won $(cat .bot_tests | grep "Player #1.\+came in rank #1" | wc -l) times out of $((GAMES * PARALLEL)) games"
-echo "Player #2 won $(cat .bot_tests | grep "Player #2.\+came in rank #1" | wc -l) times out of $((GAMES * PARALLEL)) games"
-echo "Player #3 won $(cat .bot_tests | grep "Player #3.\+came in rank #1" | wc -l) times out of $((GAMES * PARALLEL)) games"
+echo "rank #1 $(cat .bot_tests | grep "Player #0.\+came in rank #1" | wc -l) times out of $((GAMES * PARALLEL)) games"
+echo "rank #2 $(cat .bot_tests | grep "Player #0.\+came in rank #2" | wc -l) times out of $((GAMES * PARALLEL)) games"
+echo "rank #3 $(cat .bot_tests | grep "Player #0.\+came in rank #3" | wc -l) times out of $((GAMES * PARALLEL)) games"
+echo "rank #4 $(cat .bot_tests | grep "Player #0.\+came in rank #4" | wc -l) times out of $((GAMES * PARALLEL)) games"
+#echo "Player #0 won $(cat .bot_tests | grep "Player #0.\+came in rank #1" | wc -l) times out of $((GAMES * PARALLEL)) games"
+#echo "Player #1 won $(cat .bot_tests | grep "Player #1.\+came in rank #1" | wc -l) times out of $((GAMES * PARALLEL)) games"
+#echo "Player #2 won $(cat .bot_tests | grep "Player #2.\+came in rank #1" | wc -l) times out of $((GAMES * PARALLEL)) games"
+#echo "Player #3 won $(cat .bot_tests | grep "Player #3.\+came in rank #1" | wc -l) times out of $((GAMES * PARALLEL)) games"
 echo "$(ls *-*.log 2> /dev/null | wc -l) Failures found"
 echo -ne "\0007"
 #say "test complete"

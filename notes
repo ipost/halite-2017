@@ -110,8 +110,8 @@ a = ((s1.vx - s2.vx)^2 + (s1.vy - s2.vy)^2)
 b = (2(s1.px - s2.px)(s1.vx - s2.vx) + 2(s1.py - s2.py)(s1.vy - s2.vy))
 c = ((s1.px - s2.px)^2 + (s1.py - s2.py)^2 - di^2)
 
-determinant = b^2 - 4ac
-determinant = (2(s1.px - s2.px)(s1.vx - s2.vx) + 2(s1.py - s2.py)(s1.vy - s2.vy))^2 - 4((s1.vx - s2.vx)^2 + (s1.vy - s2.vy)^2)((s1.px - s2.px)^2 + (s1.py - s2.py)^2 - di^2)
+discriminant = b^2 - 4ac
+discriminant = (2(s1.px - s2.px)(s1.vx - s2.vx) + 2(s1.py - s2.py)(s1.vy - s2.vy))^2 - 4((s1.vx - s2.vx)^2 + (s1.vy - s2.vy)^2)((s1.px - s2.px)^2 + (s1.py - s2.py)^2 - di^2)
 
 
 
