@@ -119,20 +119,108 @@ struct ShipMoves<'a> {
     raid_moves: Vec<Move<'a>>,
     defend_moves: Vec<Move<'a>>,
     intercept_moves: Vec<Move<'a>>,
+    deqd_dock_moves: Vec<Move<'a>>,
+    deqd_raid_moves: Vec<Move<'a>>,
+    deqd_defend_moves: Vec<Move<'a>>,
+    deqd_intercept_moves: Vec<Move<'a>>,
     best_move: MoveType,
 }
 
 impl<'a> ShipMoves<'a> {
+    pub fn new<'b>(
+        ship: &'b Ship,
+        game_map: &'b GameMap,
+        planets_to_dock: &Vec<&'b Planet>,
+        enemy_docked_ships: &Vec<&'b Ship>,
+        enemy_undocked_ships: &Vec<&'b Ship>,
+    ) -> ShipMoves<'b> {
+        let mut dock_moves: Vec<Move> = planets_to_dock
+            .iter()
+            .map(|p| Move::DockMove(*p, 0.0))
+            .collect();
+        let mut raid_moves: Vec<Move> = enemy_docked_ships
+            .iter()
+            .map(|enemy_ship| Move::RaidMove(*enemy_ship, 0.0))
+            .collect();
+        let mut defend_moves: Vec<Move> = enemy_undocked_ships
+            .iter()
+            .map(|enemy_ship| Move::DefendMove(*enemy_ship, 0.0))
+            .collect();
+        let mut intercept_moves: Vec<Move> = enemy_undocked_ships
+            .iter()
+            .map(|enemy_ship| Move::InterceptMove(*enemy_ship, 0.0))
+            .collect();
+        for d_m in &mut dock_moves {
+            d_m.recalculate(ship, &game_map);
+        }
+        for r_m in &mut raid_moves {
+            r_m.recalculate(ship, &game_map);
+        }
+        for d_m in &mut defend_moves {
+            d_m.recalculate(ship, &game_map);
+        }
+        for i_m in &mut intercept_moves {
+            i_m.recalculate(ship, &game_map);
+        }
+        let deqd_dock_moves = vec![];
+        let deqd_raid_moves = vec![];
+        let deqd_defend_moves = vec![];
+        let deqd_intercept_moves = vec![];
+        let best_move = MoveType::DockMove;
+        let mut s_m = ShipMoves {
+            ship,
+            dock_moves,
+            raid_moves,
+            defend_moves,
+            intercept_moves,
+            deqd_dock_moves,
+            deqd_raid_moves,
+            deqd_defend_moves,
+            deqd_intercept_moves,
+            best_move,
+        };
+        s_m.sort_moves();
+        s_m.refresh_best_move();
+        s_m
+    }
+
+    pub fn recalculate_for_ship_change(&mut self, target_ship: &Ship, game_map: &GameMap) {
+        for m in &mut self.raid_moves {
+            if let &mut Move::RaidMove(s, v) = m {
+                if s.id == target_ship.id {
+                    //m.recalculate();
+                }
+            }
+        }
+    }
+
     // moves must be sorted by value within their type before calling
     pub fn update_best_move(&mut self) {
         match self.best_move {
-            MoveType::DockMove => self.dock_moves.remove(0),
-            MoveType::RaidMove => self.raid_moves.remove(0),
-            MoveType::DefendMove => self.defend_moves.remove(0),
-            MoveType::InterceptMove => self.intercept_moves.remove(0),
+            MoveType::DockMove => self.deqd_dock_moves.push(self.dock_moves.remove(0)),
+            MoveType::RaidMove => self.deqd_raid_moves.push(self.raid_moves.remove(0)),
+            MoveType::DefendMove => self.deqd_defend_moves.push(self.defend_moves.remove(0)),
+            MoveType::InterceptMove => self.deqd_intercept_moves
+                .push(self.intercept_moves.remove(0)),
             _ => assert_unreachable!(),
         };
         self.refresh_best_move();
+    }
+
+    pub fn recombine_deqs(&mut self) {
+        while self.deqd_dock_moves.len() > 0 {
+            self.dock_moves.push(self.deqd_dock_moves.remove(0));
+        }
+        while self.deqd_raid_moves.len() > 0 {
+            self.raid_moves.push(self.deqd_raid_moves.remove(0));
+        }
+        while self.deqd_defend_moves.len() > 0 {
+            self.defend_moves.push(self.deqd_defend_moves.remove(0));
+        }
+        while self.deqd_intercept_moves.len() > 0 {
+            self.intercept_moves
+                .push(self.deqd_intercept_moves.remove(0));
+        }
     }
 
     pub fn refresh_best_move(&mut self) {
@@ -357,75 +445,53 @@ fn main() {
             }
         }
 
+        let mut all_ship_moves: Vec<ShipMoves> = game_map
+            .my_ships()
+            .into_iter()
+            .filter(|s| !s.commanded() && s.is_undocked())
+            .map(|ship| {
+                ShipMoves::new(
+                    ship,
+                    &game_map,
+                    &planets_to_dock,
+                    &enemy_docked_ships,
+                    &enemy_undocked_ships,
+                )
+            })
+            .collect();
+
         let mut commands_issued = 0;
         let mut break_command = -1;
         while game_map.my_ships().iter().any(|s| !s.commanded()) && break_command != commands_issued {
-            break_command = commands_issued;
+            if turn_number == 120 {
+                logger.log(&format!("  shipz: {:#?}",
+                                    game_map.my_ships().into_iter().filter(|s| !s.commanded()).collect::<Vec<&Ship>>().len()
+                                    ));
+            }
+            logger.log(&format!("  commands_issued: {} break_command: {}", commands_issued, break_command));
+            break_command = commands_issued.clone();
+            logger.log(&format!("  after set: commands_issued: {} break_command: {}", commands_issued, break_command));
 
-            let mut all_ship_moves: Vec<ShipMoves> = game_map
-                .my_ships()
-                .into_iter()
-                .filter(|s| !s.commanded() && s.is_undocked())
-                .map(|ship| {
-                    let mut dock_moves: Vec<Move> = planets_to_dock
-                        .iter()
-                        .map(|p| Move::DockMove(*p, 0.0))
-                        .collect();
-                    let mut raid_moves: Vec<Move> = enemy_docked_ships
-                        .iter()
-                        .map(|enemy_ship| Move::RaidMove(*enemy_ship, 0.0))
-                        .collect();
-                    let mut defend_moves: Vec<Move> = enemy_undocked_ships
-                        .iter()
-                        .map(|enemy_ship| Move::DefendMove(*enemy_ship, 0.0))
-                        .collect();
-                    let mut intercept_moves: Vec<Move> = enemy_undocked_ships
-                        .iter()
-                        .map(|enemy_ship| Move::InterceptMove(*enemy_ship, 0.0))
-                        .collect();
-                    for d_m in &mut dock_moves {
-                        d_m.recalculate(ship, &game_map);
-                    }
-                    for r_m in &mut raid_moves {
-                        r_m.recalculate(ship, &game_map);
-                    }
-                    for d_m in &mut defend_moves {
-                        d_m.recalculate(ship, &game_map);
-                    }
-                    for i_m in &mut intercept_moves {
-                        i_m.recalculate(ship, &game_map);
-                    }
-                    let best_move = MoveType::DockMove;
-                    let mut s_m = ShipMoves {
-                        ship,
-                        dock_moves,
-                        raid_moves,
-                        defend_moves,
-                        intercept_moves,
-                        best_move,
-                    };
-                    s_m.sort_moves();
-                    s_m.refresh_best_move();
-                    s_m
-                })
-            .collect();
-
-            // for s_m in &mut all_ship_moves {
-            //     for d_m in &mut s_m.dock_moves {
-            //         d_m.recalculate(s_m.ship, &game_map);
-            //     }
-            //     for r_m in &mut s_m.raid_moves {
-            //         r_m.recalculate(s_m.ship, &game_map);
-            //     }
-            //     for d_m in &mut s_m.defend_moves {
-            //         d_m.recalculate(s_m.ship, &game_map);
-            //     }
-            //     for i_m in &mut s_m.intercept_moves {
-            //         i_m.recalculate(s_m.ship, &game_map);
-            //     }
-            //     s_m.sort_moves();
-            //     s_m.refresh_best_move();
-            // }
+            // next: only recalc if the move would have been affected, which right now
+            // should just
+            // be if the commitment level of the move target changed
+            for s_m in &mut all_ship_moves {
+                s_m.recombine_deqs();
+                for d_m in &mut s_m.dock_moves {
+                    d_m.recalculate(s_m.ship, &game_map);
+                }
+                for r_m in &mut s_m.raid_moves {
+                    r_m.recalculate(s_m.ship, &game_map);
+                }
+                for d_m in &mut s_m.defend_moves {
+                    d_m.recalculate(s_m.ship, &game_map);
+                }
+                for i_m in &mut s_m.intercept_moves {
+                    i_m.recalculate(s_m.ship, &game_map);
+                }
+                s_m.sort_moves();
+                s_m.refresh_best_move();
+            }
 
             // break executed at end if command issued
             loop {
@@ -685,10 +751,19 @@ fn main() {
                     None => {
                         *attempted_commands.get_mut(&ship_id).unwrap() += 1;
                         if attempted_commands[&ship_id] >= (13000 / ship_count) as i32 {
+                            logger.log(&format!(
+                                "  ship {} will Stay, move not found",
+                                ship_id,
+                            ));
                             game_map
                                 .get_ship(ship_id)
                                 .command
                                 .set(Some(Command::Stay()));
+                            let index = all_ship_moves
+                                .iter()
+                                .position(|s_m| s_m.ship.id == ship_id)
+                                .unwrap();
+                            all_ship_moves.remove(index);
                             commands_issued += 1;
                             break;
                         }
@@ -701,6 +776,7 @@ fn main() {
                 }
             } // loop
         }
+
         for command in command_queue.iter() {
             logger.log(&format!("{}", command.encode()));
         }
