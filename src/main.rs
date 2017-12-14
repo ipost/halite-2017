@@ -1,9 +1,3 @@
-/* This is a Rust implementation of the Settler starter bot for Halite-II
- * For the most part, the code is organized like the Python version, so see
- * that
- * code for more information.
- * */
-
 #![cfg_attr(feature = "clippy", feature(plugin))]
 #![cfg_attr(feature = "clippy", plugin(clippy))]
 
@@ -21,7 +15,7 @@ macro_rules! assert_unreachable (
 use hlt::game_map::GameMap;
 use hlt::constants::{DEFEND_PREFERENCE_2P, DEFEND_PREFERENCE_4P, DOCK_PREFERENCE_2P, DOCK_PREFERENCE_4P,
                      INTERCEPT_PREFERENCE_2P, INTERCEPT_PREFERENCE_4P, RAID_PREFERENCE_2P, RAID_PREFERENCE_4P,
-                     DOCK_RADIUS, DOCK_TURNS, MAX_CORRECTIONS, MAX_SPEED, WEAPON_RADIUS};
+                     DOCK_RADIUS, DOCK_TURNS, FUDGE, MAX_CORRECTIONS, MAX_SPEED, SHIP_RADIUS, WEAPON_RADIUS};
 extern crate time;
 use time::PreciseTime;
 use std::cmp::Ordering;
@@ -37,6 +31,10 @@ macro_rules! print_timing (
             res
         }}
             );
+
+macro_rules! in_360 (
+    ($angle:expr) => (($angle + 360.0) % 360.0)
+    );
 
 #[derive(Debug)]
 struct Configs {
@@ -392,12 +390,12 @@ fn main() {
 
         let mut ships_to_order = vec![];
         let mut attempted_commands: HashMap<i32, i32> = HashMap::new();
-        // Ignore ships that are docked or in the process of (un)docking
+        // Ignore ships that are in the process of (un)docking
         for ship in ships {
-            if ship.docking_status == DockingStatus::UNDOCKED {
+            if ship.is_undocked() {
                 attempted_commands.insert(ship.id, 0);
                 ships_to_order.push(ship);
-            } else {
+            } else if !ship.is_docked() {
                 logger.log(&format!(
                     "  ship {} will remain {}",
                     ship.id,
@@ -407,10 +405,8 @@ fn main() {
             }
         }
 
-        let mut all_ship_moves: Vec<ShipMoves> = game_map
-            .my_ships()
+        let mut all_ship_moves: Vec<ShipMoves> = ships_to_order
             .into_iter()
-            .filter(|s| !s.commanded() && s.is_undocked())
             .map(|ship| {
                 ShipMoves::new(
                     ship,
@@ -422,6 +418,17 @@ fn main() {
                 )
             })
             .collect();
+
+        let strongest_enemy_fleet = game_map
+            .state
+            .players
+            .iter()
+            .filter(|p| p.id != game.my_id as i32)
+            .map(|p| p.all_ships().len())
+            .max()
+            .unwrap();
+        let should_flee =
+            game_map.state.players.len() > 2 && strongest_enemy_fleet > game_map.get_me().all_ships().len() * 3;
 
         let mut commands_issued = 0;
         let mut break_command = -1;
@@ -441,42 +448,73 @@ fn main() {
             // break executed at end if command issued
             loop {
                 let (ship_id, command) = {
-                    // find the current ship which has the best move to make
-                    let ship_to_move = all_ship_moves
+                    // command docked ship
+                    if let Some(ship) = game_map
+                        .my_ships()
                         .iter()
-                        // ?????
-                        //.filter(|s_m| s_m.remaining_moves() > 0)
-                        .filter(|s_m| s_m.remaining_moves() > 1)
-                        .min_by(|s_m1, s_m2| {
-                            s_m1.best_move()
-                                .value()
-                                .partial_cmp(&s_m2.best_move().value())
-                                .unwrap()
-                        });
-                    if ship_to_move.is_none() {
-                        // all ships_to_move are out of possible moves
+                        .find(|s| !s.commanded() && s.is_docked())
+                    {
+                        if should_flee {
+                            logger.log(&format!("  ship {} will undock to flee", ship.id));
+                            (ship.id, Some(ship.undock()))
+                        } else {
+                            logger.log(&format!("  ship {} will remain DOCKED", ship.id));
+                            (ship.id, Some(Command::Stay()))
+                        }
+
+                    // find the current undocked ship which has the best move to make
+                    } else if let Some(ship_to_move) = all_ship_moves
+                        .iter()
+                            // ?????
+                            //.filter(|s_m| s_m.remaining_moves() > 0)
+                            .filter(|s_m| s_m.remaining_moves() > 1)
+                            .min_by(|s_m1, s_m2| {
+                                s_m1.best_move()
+                                    .value()
+                                    .partial_cmp(&s_m2.best_move().value())
+                                    .unwrap()
+                            }) {
+                        (
+                            ship_to_move.ship.id,
+                            if should_flee {
+                                flee(
+                                    ship_to_move.ship,
+                                    &game_map,
+                                    &enemy_undocked_ships,
+                                    &mut logger,
+                                )
+                            } else {
+                                try_make_move(
+                                    ship_to_move,
+                                    &game_map,
+                                    &enemy_undocked_ships,
+                                    &my_docked_ships,
+                                    &mut attempted_commands,
+                                    &mut logger,
+                                )
+                            },
+                        )
+
+                    // there are no ships left to command
+                    } else {
                         break;
                     }
-                    try_make_move(
-                        ship_to_move.unwrap(),
-                        &game_map,
-                        &enemy_undocked_ships,
-                        &my_docked_ships,
-                        &mut attempted_commands,
-                        &mut logger,
-                    )
                 };
 
                 match command {
                     Some(command) => {
-                        command_queue.push(command);
+                        match command {
+                            Command::Stay() => {}
+                            _ => command_queue.push(command),
+                        }
                         let ship: &Ship = game_map.get_ship(ship_id);
                         ship.command.set(Some(command));
-                        let index = all_ship_moves
-                            .iter()
-                            .position(|s_m| s_m.ship.id == ship.id)
-                            .unwrap();
-                        all_ship_moves.remove(index);
+                        match all_ship_moves.iter().position(|s_m| s_m.ship.id == ship.id) {
+                            Some(index) => {
+                                all_ship_moves.remove(index);
+                            }
+                            None => {}
+                        };
                         if let Command::Thrust(s_id, speed, angle) = command {
                             ship.set_velocity(
                                 speed as f64 * (angle as f64).to_radians().cos(),
@@ -486,7 +524,7 @@ fn main() {
                         commands_issued += 1;
                         break;
                     }
-                    None => {
+                    None => if attempted_commands.contains_key(&ship_id) {
                         *attempted_commands.get_mut(&ship_id).unwrap() += 1;
                         if attempted_commands[&ship_id] >= (12000 / ship_count) as i32 {
                             logger.log(&format!("  ship {} will Stay, move not found", ship_id,));
@@ -507,11 +545,10 @@ fn main() {
                             .find(|s_m| s_m.ship.id == ship_id)
                             .unwrap()
                             .update_best_move();
-                    }
+                    },
                 }
             } // loop
         }
-
         for command in command_queue.iter() {
             logger.log(&format!("{}", command.encode()));
         }
@@ -523,6 +560,70 @@ fn main() {
     }
 }
 
+fn flee(ship: &Ship, game_map: &GameMap, enemy_undocked_ships: &Vec<&Ship>, logger: &mut Logger) -> Option<Command> {
+    let margin = 1.7;
+    let small_margin = SHIP_RADIUS + FUDGE;
+    let center = game_map.center();
+    let ship_angle: f64 = in_360!(
+        (ship.get_position().1 - center.1)
+            .atan2(ship.get_position().0 - center.0)
+            .to_degrees()
+    );
+    let north_range = (
+        in_360!((-1.0 * center.1).atan2(-1.0 * center.0).to_degrees()),
+        in_360!((-1.0 * center.1).atan2(1.0 * center.0).to_degrees()),
+    );
+    let south_range = (
+        in_360!((1.0 * center.1).atan2(1.0 * center.0).to_degrees()),
+        in_360!((1.0 * center.1).atan2(-1.0 * center.0).to_degrees()),
+    );
+    let west_range = (
+        in_360!((1.0 * center.1).atan2(-1.0 * center.0).to_degrees()),
+        in_360!((-1.0 * center.1).atan2(-1.0 * center.0).to_degrees()),
+    );
+    let destination = if ship_angle <= south_range.1 && ship_angle >= south_range.0 {
+        Position {
+            0: game_map.width() - small_margin,
+            1: game_map.height() - margin,
+        }
+    } else if ship_angle < west_range.1 && ship_angle > west_range.0 {
+        Position {
+            0: margin,
+            1: game_map.height() - small_margin,
+        }
+    } else if ship_angle < north_range.1 && ship_angle > north_range.0 {
+        Position {
+            0: small_margin,
+            1: margin,
+        }
+    } else {
+        Position {
+            0: game_map.width() - margin,
+            1: small_margin,
+        }
+    };
+    let (speed, angle) = ship.route_to(&destination, &game_map);
+    match ship.safely_adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS) {
+        Some((speed, angle)) => {
+            logger.log(&format!(
+                "  ship {} : speed: {}, angle: {}, target: {}",
+                ship.id,
+                speed,
+                angle,
+                destination,
+            ));
+            Some(ship.thrust(speed, angle))
+        }
+        _ => {
+            logger.log(&format!(
+                "  --- failed to find path to flee for ship {}",
+                ship.id
+            ));
+            None
+        }
+    }
+}
+
 fn try_make_move(
     ship_to_move: &ShipMoves,
     game_map: &GameMap,
@@ -530,7 +631,7 @@ fn try_make_move(
     my_docked_ships: &Vec<&Ship>,
     attempted_commands: &mut HashMap<i32, i32>,
     logger: &mut Logger,
-) -> (i32, Option<Command>) {
+) -> Option<Command> {
     let ship = ship_to_move.ship;
     let command = match ship_to_move.best_move() {
         // execute dock move
@@ -737,5 +838,5 @@ fn try_make_move(
         }
         _ => assert_unreachable!(),
     };
-    (ship.id, command)
+    command
 }

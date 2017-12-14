@@ -99,4 +99,11 @@ impl<'a> GameMap<'a> {
     pub fn height(&self) -> f64 {
         self.game.map_height as f64
     }
+
+    pub fn center(&self) -> Position {
+        Position {
+            0: self.width() / 2.0,
+            1: self.height() / 2.0,
+        }
+    }
 }

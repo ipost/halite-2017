@@ -8,6 +8,7 @@ macro_rules! in_2pi (
     ($angle:expr) => (($angle + (2f64 * PI)) % (2f64 * PI))
     );
 
+#[macro_use]
 macro_rules! in_360 (
     ($angle:expr) => ($angle % 360.0)
     );

@@ -103,7 +103,6 @@ impl Ship {
         Command::Dock(self.id, planet.id)
     }
 
-    #[allow(dead_code)]
     pub fn undock(&self) -> Command {
         Command::Undock(self.id)
     }
@@ -125,8 +124,16 @@ impl Ship {
         self.distance_to_less_than(ship, (WEAPON_RADIUS + SHIP_RADIUS + SHIP_RADIUS))
     }
 
+    pub fn is_docked(&self) -> bool {
+        self.docking_status == DockingStatus::DOCKED
+    }
+
     pub fn is_undocked(&self) -> bool {
         self.docking_status == DockingStatus::UNDOCKED
+    }
+
+    pub fn is_commandable(&self) -> bool {
+        self.docking_status == DockingStatus::UNDOCKED || self.docking_status == DockingStatus::DOCKED
     }
 
     pub fn hp_percent(&self) -> f64 {
@@ -245,23 +252,6 @@ impl Ship {
         )
     }
 
-    fn _collide_helper(&self, other_ship: &Ship, radius: f64) -> bool {
-        // TODO: optimize this? requires calculus?
-        let step_count = 25;
-        let mut step = 1;
-        while step <= step_count {
-            if self.dist_to_at_less_than(
-                other_ship,
-                (step as f64 / step_count as f64).clone(),
-                radius,
-            ) {
-                return true;
-            }
-            step += 1;
-        }
-        false
-    }
-
     fn collide_helper(&self, other_ship: &Ship, radius: f64) -> bool {
         let s1vx = self.velocity_x.get();
         let s2vx = other_ship.velocity_x.get();
@@ -281,8 +271,11 @@ impl Ship {
             false
         } else {
             let t1 = ((-1.0 * b) - discriminant.sqrt()) / (2.0 * a);
+            if 0.0 <= t1 && t1 <= 1.0 {
+                return true;
+            }
             let t2 = ((-1.0 * b) + discriminant.sqrt()) / (2.0 * a);
-            (0.0 <= t1 && t1 <= 1.0) || (0.0 <= t2 && t2 <= 1.0)
+            (0.0 <= t2 && t2 <= 1.0)
         }
     }
 
@@ -310,42 +303,38 @@ impl Ship {
         let enemy_ships: Vec<&Ship> = game_map
             .enemy_ships()
             .into_iter()
-            .filter(|other| {
-                other.is_undocked()
-
-                    // too far away to possibly enter attack range
-                    && self.distance_to_less_than(*other, FUDGE + WEAPON_RADIUS + (2f64 * (SHIP_RADIUS + MAX_SPEED as f64)))
-
-                // already in attack range, can't avoid damage
-                // && !self.in_attack_range(other)
-            })
+            .filter(|other| other.is_undocked())
             .collect();
 
-        // TODO: figure out how to solve probably where my ships clump up and time out
+        // TODO: figure out how to solve problem where my ships clump up and time out
         let will_collide = |v_x, v_y| -> bool {
             // check enemy stationary ships? if not docked and more health?
             let thrust_end = Position(self.get_position().0 + v_x, self.get_position().1 + v_y);
             self.set_velocity(v_x, v_y);
-            let step_count = 20;
-            let collide_with_friendly_ship: bool = my_ships
-                .iter()
-                .filter(|other| {
-                    other.id != self.id // only ships that could get close enough
-                        && self.distance_to_less_than(**other, FUDGE + (2f64 * (SHIP_RADIUS + MAX_SPEED as f64)))
-                        && other.is_undocked()
-                })
-                .any(|other| self.will_collide_with(other));
-            let attacked_by_enemy = if avoid_enemies {
-                enemy_ships.iter().any(|enemy| {
-                    !self.in_attack_range(enemy) && self.will_enter_attack_range(enemy)
-                })
-            } else {
-                false
-            };
-            self.reset_velocity();
-            if collide_with_friendly_ship || attacked_by_enemy {
+
+            // check for hitting walls
+            if thrust_end.0 < nav_radius || thrust_end.1 < nav_radius || (game_map.width() - thrust_end.0) < nav_radius
+                || (game_map.height() - thrust_end.1) < nav_radius
+            {
+                self.reset_velocity();
                 return true;
             }
+
+            // check for colliding with friendly ships
+            if my_ships.iter().any(|other| self.will_collide_with(other)) {
+                self.reset_velocity();
+                return true;
+            }
+
+            // check for taking attacks
+            if avoid_enemies && enemy_ships.iter().any(|enemy| {
+                !self.in_attack_range(enemy) && self.will_enter_attack_range(enemy)
+            }) {
+                self.reset_velocity();
+                return true;
+            }
+
+            self.reset_velocity();
             game_map
                 .closest_stationary_obstacle(&self.get_position(), &thrust_end, FUDGE)
                 .is_some()
