@@ -200,7 +200,7 @@ impl Ship {
             // (enemy_ship.commitment() * 2 + 1) as f64 * (distance_to_victim + (threat *
             // 1.2)) // / 2.0
             let distance_to_aggressor = self.distance_to_surface(enemy_ship);
-            (enemy_ship.commitment() * 9 + 1) as f64 * ((distance_to_aggressor * 0.5) + (threat * 1.5))
+            (enemy_ship.commitment() * 999999 + 1) as f64 * ((distance_to_aggressor * 0.5) + (threat * 1.5))
         } else {
             // if I have no docked ships, there's nothing to defend, unless I can attempt
             // to preemptively defend ships which are going to dock
@@ -343,15 +343,36 @@ impl Ship {
         if !will_collide(velocity_x, velocity_y) {
             return Some((speed, (angle as i32 + 360) % 360));
         }
-        let angular_step = 1;
-        for i in 1..(max_corrections + 1) {
-            for angular_offset in vec![i * angular_step, -1 * i * angular_step] {
-                let new_angle = angle + angular_offset;
-                let velocity_x = speed as f64 * (new_angle as f64).to_radians().cos();
-                let velocity_y = speed as f64 * (new_angle as f64).to_radians().sin();
-                if !will_collide(velocity_x, velocity_y) {
-                    return Some((speed, (new_angle as i32 + 360) % 360));
-                }
+
+        let destination = {
+            let v_x = speed as f64 * (angle as f64).to_radians().cos();
+            let v_y = speed as f64 * (angle as f64).to_radians().sin();
+            Position(self.get_position().0 + v_x, self.get_position().1 + v_y)
+        };
+
+        // sort these by how close they'd leave the ship to the target
+        // try all speed, angle combos
+        let mut possible_thrusts: Vec<(i32, i32, Position)> = Vec::with_capacity(1 + (360 * MAX_SPEED) as usize);
+        possible_thrusts.push((0, 0, self.get_position()));
+        for angle in 0..359 {
+            for speed in 1..(MAX_SPEED + 1) {
+                let v_x = speed as f64 * (angle as f64).to_radians().cos();
+                let v_y = speed as f64 * (angle as f64).to_radians().sin();
+                let thrust_end = Position(self.get_position().0 + v_x, self.get_position().1 + v_y);
+                possible_thrusts.push((speed, angle, thrust_end));
+            }
+        }
+        possible_thrusts.sort_by(|&(speed1, angle1, pos1), &(speed2, angle2, pos2)| {
+            ((destination.0 - pos1.0).powi(2) + (destination.1 - pos1.1).powi(2))
+                .partial_cmp(&((destination.0 - pos2.0).powi(2) + (destination.1 - pos2.1).powi(2)))
+                .unwrap()
+        });
+
+        for (speed, angle, end_position) in possible_thrusts {
+            let velocity_x = speed as f64 * (angle as f64).to_radians().cos();
+            let velocity_y = speed as f64 * (angle as f64).to_radians().sin();
+            if !will_collide(velocity_x, velocity_y) {
+                return Some((speed, (angle as i32 + 360) % 360));
             }
         }
         None
@@ -403,8 +424,8 @@ fn dock_value_helper<T: Entity>(entity: &T, planet: &Planet, game_map: &GameMap)
     );
 
     let size_factor = match planet.num_docking_spots {
-        2 => 1.20,
-        3 => 1.15,
+        2 => 1.30,
+        3 => 1.10,
         4 => 1.10,
         5 => 1.05,
         6 => 1.00,
