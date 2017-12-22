@@ -303,7 +303,7 @@ ShipMoves {{
 
 fn main() {
     // Initialize the game
-    let bot_name = "memetron_420v8";
+    let bot_name = "memetron_420v9";
     let game = Game::new(bot_name);
     // Initialize logging
     let mut logger = Logger::new(game.my_id);
