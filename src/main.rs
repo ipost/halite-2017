@@ -562,8 +562,11 @@ fn main() {
                             .update_best_move();
                     },
                 }
+                if start_time.to(PreciseTime::now()).num_milliseconds() > 1925 {
+                    break;
+                }
             } // loop
-            if start_time.to(PreciseTime::now()).num_milliseconds() > 1900 {
+            if start_time.to(PreciseTime::now()).num_milliseconds() > 1850 {
                 break;
             }
         }
@@ -653,6 +656,7 @@ fn try_make_move(
 ) -> Option<Command> {
     let ship = ship_to_move.ship;
     let command = match ship_to_move.best_move() {
+
         // execute dock move
         &Move::DockMove(planet, v) => {
             let destination = &ship.closest_point_to(planet, 1.0);
