@@ -142,6 +142,8 @@ impl<'a> ShipMoves<'a> {
             .into_iter()
             .map(|enemy_ship| Move::RaidMove(enemy_ship, 0.0))
             .collect();
+        // make defend move function of friendly ship? create defend move only if one
+        // of closer ships
         let mut defend_moves: Vec<Move> = enemy_undocked_ships
             .into_iter()
             .map(|enemy_ship| Move::DefendMove(enemy_ship, 0.0))
@@ -301,7 +303,7 @@ ShipMoves {{
 
 fn main() {
     // Initialize the game
-    let bot_name = "memetron_420v7";
+    let bot_name = "memetron_420v8";
     let game = Game::new(bot_name);
     // Initialize logging
     let mut logger = Logger::new(game.my_id);
@@ -322,22 +324,29 @@ fn main() {
         let mut command_queue: Vec<Command> = Vec::new();
 
         // set playercount-dependent params
-        let (dock_preference, raid_preference, defend_preference, intercept_preference) =
-            if game_map.state.players.len() > 2 {
-                (
-                    DOCK_PREFERENCE_4P,
-                    RAID_PREFERENCE_4P,
-                    DEFEND_PREFERENCE_4P,
-                    INTERCEPT_PREFERENCE_4P,
-                )
-            } else {
-                (
-                    DOCK_PREFERENCE_2P,
-                    RAID_PREFERENCE_2P,
-                    DEFEND_PREFERENCE_2P,
-                    INTERCEPT_PREFERENCE_2P,
-                )
-            };
+        let my_ship_count = game_map.get_me().all_ships().len();
+        let relevant_opponents = game_map
+            .state
+            .players
+            .iter()
+            .filter(|p| p.id != game.my_id as i32)
+            .filter(|p| p.all_ships().len() * 2 > my_ship_count)
+            .count();
+        let (dock_preference, raid_preference, defend_preference, intercept_preference) = if relevant_opponents > 1 {
+            (
+                DOCK_PREFERENCE_4P,
+                RAID_PREFERENCE_4P,
+                DEFEND_PREFERENCE_4P,
+                INTERCEPT_PREFERENCE_4P,
+            )
+        } else {
+            (
+                DOCK_PREFERENCE_2P,
+                RAID_PREFERENCE_2P,
+                DEFEND_PREFERENCE_2P,
+                INTERCEPT_PREFERENCE_2P,
+            )
+        };
         let configs = Configs {
             dock_preference,
             raid_preference,
@@ -483,12 +492,18 @@ fn main() {
                                     &enemy_undocked_ships,
                                     &mut logger,
                                 )
+                            } else if false {
+                                // planet destruction: select some ships to crash into planet
+                                // move others out of explosion radius
+                                None
                             } else {
+                                // maybe don't safely adjust when having ship advantage? 1.5:1?
                                 try_make_move(
                                     ship_to_move,
                                     &game_map,
                                     &enemy_undocked_ships,
                                     &my_docked_ships,
+                                    relevant_opponents,
                                     &mut attempted_commands,
                                     &mut logger,
                                 )
@@ -548,6 +563,9 @@ fn main() {
                     },
                 }
             } // loop
+            if start_time.to(PreciseTime::now()).num_milliseconds() > 1900 {
+                break;
+            }
         }
         for command in command_queue.iter() {
             logger.log(&format!("{}", command.encode()));
@@ -629,6 +647,7 @@ fn try_make_move(
     game_map: &GameMap,
     enemy_undocked_ships: &Vec<&Ship>,
     my_docked_ships: &Vec<&Ship>,
+    relevant_opponents: usize,
     attempted_commands: &mut HashMap<i32, i32>,
     logger: &mut Logger,
 ) -> Option<Command> {
@@ -636,7 +655,7 @@ fn try_make_move(
     let command = match ship_to_move.best_move() {
         // execute dock move
         &Move::DockMove(planet, v) => {
-            let destination = &ship.closest_point_to(planet, 3.0);
+            let destination = &ship.closest_point_to(planet, 1.0);
             // check if nearby enemies with commitment == 0
             // TODO: maybe move this to dock_value
             let nearby_enemies = enemy_undocked_ships.iter().any(|e_s| {
@@ -650,11 +669,13 @@ fn try_make_move(
             {
                 None
 
-            // if close enough to dock
+            // if a ship would spawn before we could arrive
             } else if (planet.turns_until_spawn() as f64)
                 < (ship.distance_to_surface(planet) + DOCK_RADIUS) / MAX_SPEED as f64
             {
                 None
+
+            // if close enough to dock
             } else if ship.in_dock_range(planet) {
                 planet.committed_ships.set(planet.committed_ships.get() + 1);
                 logger.log(&format!("  Ship {} docking to {}", ship.id, planet.id));
@@ -662,7 +683,6 @@ fn try_make_move(
 
             // otherwise, fly towards planet
             } else {
-                let destination = &ship.closest_point_to(planet, 3.0);
                 let (speed, angle) = ship.route_to(destination, &game_map);
                 let speed_angle: Option<(i32, i32)> = if attempted_commands.get(&ship.id).unwrap() < &25 {
                     ship.safely_adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS)
@@ -770,14 +790,21 @@ fn try_make_move(
                     Some(ship.thrust(speed, angle))
                 } else {
                     let (dx, dy) = (
-                        (ship_to_defend.get_position().0 - enemy_ship.get_position().0),
-                        (ship_to_defend.get_position().1 - enemy_ship.get_position().1),
+                        (enemy_ship.get_position().0 - ship_to_defend.get_position().0),
+                        (enemy_ship.get_position().1 - ship_to_defend.get_position().1),
                     );
                     let magnitude = f64::sqrt(dx.powi(2) + dy.powi(2));
-                    let destination = Position(
-                        (ship_to_defend.get_position().0 - (dx / magnitude)),
-                        (ship_to_defend.get_position().1 - (dy / magnitude)),
-                    );
+                    let destination = if relevant_opponents > 1 {
+                        Position(
+                            (ship_to_defend.get_position().0 + (dx / magnitude)),
+                            (ship_to_defend.get_position().1 + (dy / magnitude)),
+                        )
+                    } else {
+                        Position(
+                            (enemy_ship.get_position().0 - (dx / magnitude)),
+                            (enemy_ship.get_position().1 - (dy / magnitude)),
+                        )
+                    };
                     let (speed, angle) = ship.route_to(&destination, &game_map);
                     let speed_angle: Option<(i32, i32)> = ship.adjust_thrust(&game_map, speed, angle, MAX_CORRECTIONS);
                     match speed_angle {
