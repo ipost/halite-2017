@@ -307,7 +307,7 @@ ShipMoves {{
 
 fn main() {
     // Initialize the game
-    let bot_name = "memetron_420v10";
+    let bot_name = "memetron_420v11";
     let game = Game::new(bot_name);
     // Initialize logging
     let mut logger = Logger::new(game.my_id);
@@ -651,6 +651,7 @@ fn main() {
     }
 }
 
+// TODO instead of fleeing, attack weakest enemy
 fn flee(ship: &Ship, game_map: &GameMap, enemy_undocked_ships: &Vec<&Ship>, logger: &mut Logger) -> Option<Command> {
     let margin = 1.7;
     let small_margin = SHIP_RADIUS + FUDGE;
