@@ -5,7 +5,8 @@ use std::fmt;
 use hlt::pathfind::{long_angle_around, short_angle_around};
 use hlt::parse::Decodable;
 use hlt::command::Command;
-use hlt::constants::{DOCK_RADIUS, DOCK_TURNS, FUDGE, MAX_SHIP_HEALTH, MAX_SPEED, SHIP_COST, SHIP_RADIUS, WEAPON_RADIUS};
+use hlt::constants::{DOCK_RADIUS, DOCK_TURNS, FUDGE, MAX_EXPLOSION_DAMAGE, MAX_SHIP_HEALTH, MAX_SPEED,
+                     MIN_EXPLOSION_DAMAGE, SHIP_COST, SHIP_RADIUS, WEAPON_RADIUS};
 use hlt::player::Player;
 use hlt::game_map::GameMap;
 use hlt::logging::Logger;
@@ -41,6 +42,8 @@ impl Decodable for Position {
 pub struct Obstacle {
     pub position: Position,
     pub radius: f64,
+    pub velocity_x: f64,
+    pub velocity_y: f64,
 }
 
 #[derive(PartialEq, Debug)]
@@ -82,6 +85,7 @@ impl Decodable for DockingStatus {
 #[derive(Debug)]
 pub struct Ship {
     pub id: i32,
+    pub owner_id: i32,
     pub positions: Vec<Position>,
     pub hp: i32,
     pub velocity_x: Cell<f64>,
@@ -107,6 +111,24 @@ impl Ship {
         Command::Undock(self.id)
     }
 
+    pub fn get_obstacle(&self) -> Obstacle {
+        Obstacle {
+            position: self.get_position(),
+            radius: SHIP_RADIUS,
+            velocity_x: self.velocity_x.get(),
+            velocity_y: self.velocity_y.get(),
+        }
+    }
+
+    pub fn get_danger_obstacle(&self) -> Obstacle {
+        Obstacle {
+            position: self.get_position(),
+            radius: WEAPON_RADIUS,
+            velocity_x: self.velocity_x.get(),
+            velocity_y: self.velocity_y.get(),
+        }
+    }
+
     pub fn increment_committed_ships(&self) {
         self.committed_ships.set(1 + self.commitment());
     }
@@ -116,12 +138,20 @@ impl Ship {
     }
 
     pub fn in_dock_range(&self, planet: &Planet) -> bool {
-        self.distance_to_less_than(planet, (DOCK_RADIUS + planet.radius))
+        self.distance_to_less_than(planet, (DOCK_RADIUS + planet.get_radius()))
     }
 
     pub fn in_attack_range(&self, ship: &Ship) -> bool {
         // TODO: is this correct?
         self.distance_to_less_than(ship, (WEAPON_RADIUS + SHIP_RADIUS + SHIP_RADIUS))
+    }
+
+    pub fn enemies_in_attack_range(&self, game_map: &GameMap) -> usize {
+        game_map
+            .all_ships()
+            .iter()
+            .filter(|s| s.owner_id != self.owner_id && s.in_attack_range(self))
+            .count()
     }
 
     pub fn is_docked(&self) -> bool {
@@ -163,9 +193,13 @@ impl Ship {
             * (0.5 + (enemy_ship.hp_percent() / 2.0))
     }
 
+    // TODO: make commitment values on enemy ships equal to my total ship hp
+    // commitment rather than
+    // just ship count? or maybe as fractions of ship
+
     pub fn intercept_value(&self, enemy_ship: &Ship) -> f64 {
         ((enemy_ship.commitment() + 1) * 2 + 1) as f64 * self.distance_to_surface(enemy_ship)
-            * (0.5 + (enemy_ship.hp_percent() / 2.0))
+            * scaled_to(0.75, enemy_ship.hp_percent())
     }
 
     // given an enemy ship, get my closest docked ship to it. That distance * (0.75
@@ -174,18 +208,6 @@ impl Ship {
     // defender
     // need to figure out how to ensure this is comparable to attack_value
     pub fn defense_value(&self, enemy_ship: &Ship, game_map: &GameMap) -> f64 {
-        if !game_map.get_me().owns_ship(self.id) {
-            panic!(format!("defense_value() called on not my ship: {:?}", self))
-        }
-        if game_map.get_me().owns_ship(enemy_ship.id) {
-            panic!(format!(
-                "defense_value() called with my ship: {:?}",
-                enemy_ship
-            ))
-        }
-
-        // maybe also filter out my ships which will have undocked by the time the
-        // enemy ship could arrive? Not necessary until undocking implemented
         let my_docked_ships: Vec<&Ship> = game_map
             .my_ships()
             .into_iter()
@@ -195,7 +217,7 @@ impl Ship {
         if my_docked_ships.len() > 0 {
             let nearest_docked_ship = enemy_ship.nearest_entity(my_docked_ships.as_slice());
             let threat = enemy_ship.distance_to_surface(nearest_docked_ship)
-                * (0.66667 + (nearest_docked_ship.hp_percent() / 3.0));
+                * scaled_to(0.66667, nearest_docked_ship.hp_percent());
             // let distance_to_victim = self.distance_to_surface(nearest_docked_ship);
             // (enemy_ship.commitment() * 2 + 1) as f64 * (distance_to_victim + (threat *
             // 1.2)) // / 2.0
@@ -230,6 +252,33 @@ impl Ship {
         self.velocity_y.set(0f64);
     }
 
+    pub fn defenders<'a>(&self, game_map: &'a GameMap) -> Vec<&'a Ship> {
+        game_map
+            .all_ships()
+            .into_iter()
+            .filter(|s| {
+                s.owner_id == self.owner_id && s.is_undocked() && s.distance_to_less_than(self, MAX_SPEED as f64)
+            })
+            .collect()
+    }
+
+    pub fn projected_damage_taken(&self, game_map: &GameMap) -> i32 {
+        game_map
+            .all_ships()
+            .into_iter()
+            .filter(|s| s.is_undocked() && s.owner_id != self.owner_id)
+            .map(|enemy| {
+                if enemy.in_attack_range(self) {
+                    64 / enemy.enemies_in_attack_range(game_map)
+                } else if enemy.will_enter_attack_range(self) {
+                    64
+                } else {
+                    0
+                }
+            })
+            .fold(0, |acc, s| acc + s as i32)
+    }
+
     pub fn route_to<T: Entity>(&self, target: &T, game_map: &GameMap) -> (i32, i32) {
         let speed = MAX_SPEED;
         let nav_radius = SHIP_RADIUS + FUDGE;
@@ -237,12 +286,21 @@ impl Ship {
         let closest_stationary_obstacle: Option<Obstacle> =
             game_map.closest_stationary_obstacle(&self.get_position(), &target.get_position(), FUDGE);
         let desired_trajectory = match closest_stationary_obstacle {
-            Some(obstacle) => short_angle_around(
-                self.get_position(),
-                target.get_position(),
-                obstacle.position,
-                nav_radius + obstacle.radius,
-            ),
+            Some(obstacle) => {
+                // the ship is already inside the obstacle. Should only happen when the
+                // obstacle is
+                // a planet which will explode. In which case, fly directly away
+                if self.distance_to(&obstacle.position) < obstacle.radius {
+                    obstacle.position.calculate_angle_between(self)
+                } else {
+                    short_angle_around(
+                        self.get_position(),
+                        target.get_position(),
+                        obstacle.position,
+                        nav_radius + obstacle.radius,
+                    )
+                }
+            }
             None => self.calculate_angle_between(target),
         };
         let thrust_speed = min(speed, distance.round() as i32);
@@ -287,30 +345,83 @@ impl Ship {
         self.collide_helper(other_ship, (SHIP_RADIUS * 2f64) + FUDGE + WEAPON_RADIUS)
     }
 
-    fn adjust_thrust_helper(
+    pub fn will_collide_with_obstacle(&self, obstacle: &Obstacle) -> bool {
+        let ship_vx = self.velocity_x.get();
+        let ob_vx = obstacle.velocity_x;
+        let ship_vy = self.velocity_y.get();
+        let ob_vy = obstacle.velocity_y;
+
+        let radius = obstacle.radius + SHIP_RADIUS + FUDGE;
+
+        let Position(ship_px, ship_py) = self.get_position();
+        let Position(ob_px, ob_py) = obstacle.position;
+
+        let a = ((ship_vx - ob_vx).powi(2) + (ship_vy - ob_vy).powi(2));
+        let b = (2.0 * (ship_px - ob_px) * (ship_vx - ob_vx) + 2.0 * (ship_py - ob_py) * (ship_vy - ob_vy));
+        let c = ((ship_px - ob_px).powi(2) + (ship_py - ob_py).powi(2) - radius.powi(2));
+
+        let discriminant = b.powi(2) - (4.0 * a * c);
+
+        if discriminant < 0.0 {
+            false
+        } else {
+            let t1 = ((-1.0 * b) - discriminant.sqrt()) / (2.0 * a);
+            if 0.0 <= t1 && t1 <= 1.0 {
+                return true;
+            }
+            let t2 = ((-1.0 * b) + discriminant.sqrt()) / (2.0 * a);
+            (0.0 <= t2 && t2 <= 1.0)
+        }
+    }
+
+    // create function which will navigate avoiding only specified entities
+    // could be used to crash into planets while avoiding friendly ships, crash
+    // into enemies ships, etc
+    pub fn smart_navigate(
         &self,
+        destination: &Position,
         game_map: &GameMap,
-        speed: i32,
-        angle: i32,
-        max_corrections: i32,
-        avoid_enemies: bool,
+        obstacles: Vec<Obstacle>,
     ) -> Option<(i32, i32)> {
         // let mut logger = Logger::new(0);
+        // first adjust destination to route around planets
+        let closest_stationary_obstacle: Option<Obstacle> =
+            game_map.closest_stationary_obstacle(&self.get_position(), destination, FUDGE);
+        let desired_trajectory = match closest_stationary_obstacle {
+            Some(obstacle) => {
+                // the ship is already inside the obstacle. Should only happen when the
+                // obstacle is
+                // a planet which will explode. In which case, fly directly away
+                if self.distance_to(&obstacle.position) < obstacle.radius {
+                    panic!("inside something");
+                    obstacle.position.calculate_angle_between(self)
+                } else {
+                    short_angle_around(
+                        self.get_position(),
+                        *destination,
+                        obstacle.position,
+                        SHIP_RADIUS + FUDGE + obstacle.radius,
+                    )
+                }
+            }
+            None => self.calculate_angle_between(destination),
+        };
+        let thrust_speed = min(MAX_SPEED, self.distance_to(destination).round() as i32);
+        let desired_trajectory = (desired_trajectory.round() as i32 + 360) % 360;
         let nav_radius = SHIP_RADIUS + FUDGE;
-        let velocity_x = speed as f64 * (angle as f64).to_radians().cos();
-        let velocity_y = speed as f64 * (angle as f64).to_radians().sin();
-        let my_ships = game_map.my_ships();
-        let enemy_ships: Vec<&Ship> = game_map
-            .enemy_ships()
-            .into_iter()
-            .filter(|other| other.is_undocked())
-            .collect();
+        let velocity_x = thrust_speed as f64 * (desired_trajectory as f64).to_radians().cos();
+        let velocity_y = thrust_speed as f64 * (desired_trajectory as f64).to_radians().sin();
+        let destination = {
+            let pos = self.get_position();
+            Position {
+                0: pos.0 + velocity_x,
+                1: pos.1 + velocity_y,
+            }
+        };
 
-        // TODO: figure out how to solve problem where my ships clump up and time out
         let will_collide = |v_x, v_y| -> bool {
-            // check enemy stationary ships? if not docked and more health?
-            let thrust_end = Position(self.get_position().0 + v_x, self.get_position().1 + v_y);
             self.set_velocity(v_x, v_y);
+            let thrust_end = self.get_position_at(1.0);
 
             // check for hitting walls
             if thrust_end.0 < nav_radius || thrust_end.1 < nav_radius || (game_map.width() - thrust_end.0) < nav_radius
@@ -320,35 +431,24 @@ impl Ship {
                 return true;
             }
 
-            // check for colliding with friendly ships
-            if my_ships.iter().any(|other| self.will_collide_with(other)) {
-                self.reset_velocity();
-                return true;
-            }
-
-            // check for taking attacks
-            if avoid_enemies && enemy_ships.iter().any(|enemy| {
-                !self.in_attack_range(enemy) && self.will_enter_attack_range(enemy)
-            }) {
+            if obstacles
+                .iter()
+                .any(|ob| self.will_collide_with_obstacle(ob))
+            {
+                // let o = obstacles.iter().find(|ob| self.will_collide_with_obstacle(ob));
+                // let mut loggers = Logger::new(0);
+                // loggers.log(&format!("lmao {:#?}", o));
                 self.reset_velocity();
                 return true;
             }
 
             self.reset_velocity();
-            game_map
-                .closest_stationary_obstacle(&self.get_position(), &thrust_end, FUDGE)
-                .is_some()
+            false
         };
 
         if !will_collide(velocity_x, velocity_y) {
-            return Some((speed, (angle as i32 + 360) % 360));
+            return Some((thrust_speed, (desired_trajectory as i32 + 360) % 360));
         }
-
-        let destination = {
-            let v_x = speed as f64 * (angle as f64).to_radians().cos();
-            let v_y = speed as f64 * (angle as f64).to_radians().sin();
-            Position(self.get_position().0 + v_x, self.get_position().1 + v_y)
-        };
 
         // sort these by how close they'd leave the ship to the target
         // try all speed, angle combos
@@ -362,13 +462,13 @@ impl Ship {
                 possible_thrusts.push((speed, angle, thrust_end));
             }
         }
-        possible_thrusts.sort_by(|&(speed1, angle1, pos1), &(speed2, angle2, pos2)| {
+        possible_thrusts.sort_by(|&(_speed1, _angle1, pos1), &(_speed2, _angle2, pos2)| {
             ((destination.0 - pos1.0).powi(2) + (destination.1 - pos1.1).powi(2))
                 .partial_cmp(&((destination.0 - pos2.0).powi(2) + (destination.1 - pos2.1).powi(2)))
                 .unwrap()
         });
 
-        for (speed, angle, end_position) in possible_thrusts {
+        for (speed, angle, _end_position) in possible_thrusts {
             let velocity_x = speed as f64 * (angle as f64).to_radians().cos();
             let velocity_y = speed as f64 * (angle as f64).to_radians().sin();
             if !will_collide(velocity_x, velocity_y) {
@@ -376,26 +476,6 @@ impl Ship {
             }
         }
         None
-    }
-
-    pub fn safely_adjust_thrust(
-        &self,
-        game_map: &GameMap,
-        speed: i32,
-        angle: i32,
-        max_corrections: i32,
-    ) -> Option<(i32, i32)> {
-        self.adjust_thrust_helper(game_map, speed, angle, max_corrections, true)
-    }
-
-    pub fn adjust_thrust(
-        &self,
-        game_map: &GameMap,
-        speed: i32,
-        angle: i32,
-        max_corrections: i32,
-    ) -> Option<(i32, i32)> {
-        self.adjust_thrust_helper(game_map, speed, angle, max_corrections, false)
     }
 }
 
@@ -433,7 +513,7 @@ fn dock_value_helper<T: Entity>(entity: &T, planet: &Planet, game_map: &GameMap)
     };
     let planet_total = planet.commitment() + planet.docked_ships.len() as i32;
     let commitment_factor = if planet_total >= planet.num_docking_spots {
-        99999f64
+        9999999f64
     } else if planet_total > 0 {
         0.85
     } else {
@@ -458,6 +538,7 @@ impl Decodable for Ship {
         I: Iterator<Item = &'a str>,
     {
         let id = i32::parse(tokens);
+        let owner_id = 0;
         let positions = vec![Position::parse(tokens)];
         let hp = i32::parse(tokens);
         let velocity_x = Cell::new(f64::parse(tokens));
@@ -475,6 +556,7 @@ impl Decodable for Ship {
 
         let ship = Ship {
             id,
+            owner_id,
             positions,
             hp,
             velocity_x,
@@ -502,6 +584,7 @@ pub struct Planet {
     pub owner: Option<i32>,
     pub docked_ships: Vec<i32>,
     pub committed_ships: Cell<i32>,
+    pub doomed: Cell<bool>,
 }
 
 impl Planet {
@@ -518,12 +601,30 @@ impl Planet {
         self.docked_ships.len() > 0
     }
 
+    pub fn get_obstacle(&self) -> Obstacle {
+        Obstacle {
+            position: self.get_position(),
+            radius: self.radius,
+            velocity_x: 0.0,
+            velocity_y: 0.0,
+        }
+    }
+
     pub fn increment_committed_ships(&self) {
         self.committed_ships.set(1 + self.commitment());
     }
 
     pub fn commitment(&self) -> i32 {
         self.committed_ships.get()
+    }
+
+    pub fn get_danger_obstacle(&self) -> Obstacle {
+        Obstacle {
+            position: self.get_position(),
+            radius: self.explosion_radius(),
+            velocity_x: 0.0,
+            velocity_y: 0.0,
+        }
     }
 
     pub fn turns_until_spawn(&self) -> i32 {
@@ -542,6 +643,35 @@ impl Planet {
     fn base_dock_value(&self, planet: &Planet, game_map: &GameMap) -> f64 {
         dock_value_helper(self, planet, game_map)
     }
+
+    fn explosion_radius(&self) -> f64 {
+        if self.radius <= DOCK_RADIUS {
+            DOCK_RADIUS
+        } else {
+            self.radius
+        }
+    }
+
+    pub fn damage_from_explosion(&self, ship: &Ship) -> i32 {
+        let danger_radius = self.explosion_radius();
+        let distance_to_surface = self.distance_to(ship) - self.radius;
+        if distance_to_surface < danger_radius {
+            let explosion_damage = MIN_EXPLOSION_DAMAGE
+                + ((1.0 - (distance_to_surface / danger_radius)) * (MAX_EXPLOSION_DAMAGE - MIN_EXPLOSION_DAMAGE) as f64)
+                    as i32;
+            if explosion_damage > ship.hp {
+                ship.hp
+            } else {
+                explosion_damage
+            }
+        } else {
+            0
+        }
+    }
+
+    pub fn is_doomed(&self) -> bool {
+        self.doomed.get()
+    }
 }
 
 impl Decodable for Planet {
@@ -559,6 +689,7 @@ impl Decodable for Planet {
         let owner = Option::parse(tokens);
         let docked_ships = Vec::parse(tokens);
         let committed_ships = Cell::new(0);
+        let doomed = Cell::new(false);
 
         return Planet {
             id,
@@ -571,6 +702,7 @@ impl Decodable for Planet {
             owner,
             docked_ships,
             committed_ships,
+            doomed,
         };
     }
 }
@@ -672,9 +804,10 @@ impl Entity for Ship {
     }
 
     fn get_position_at(&self, t: f64) -> Position {
+        let pos = self.get_position();
         Position(
-            self.get_position().0 + (t * self.velocity_x.get()),
-            self.get_position().1 + (t * self.velocity_y.get()),
+            pos.0 + (t * self.velocity_x.get()),
+            pos.1 + (t * self.velocity_y.get()),
         )
     }
 
@@ -693,7 +826,11 @@ impl Entity for Planet {
     }
 
     fn get_radius(&self) -> f64 {
-        self.radius
+        if self.is_doomed() {
+            self.radius + self.explosion_radius()
+        } else {
+            self.radius
+        }
     }
 }
 

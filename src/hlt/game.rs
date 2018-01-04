@@ -5,6 +5,7 @@ use hlt::parse::Decodable;
 use hlt::entity::GameState;
 use hlt::command::Command;
 use hlt::game_map::GameMap;
+use time::PreciseTime;
 
 #[derive(Debug)]
 pub struct Game {
@@ -59,8 +60,9 @@ impl Game {
         return GameMap::new(self, game_state);
     }
 
-    pub fn update_map(&self, previous_map: GameMap) -> GameMap {
+    pub fn update_map(&self, previous_map: GameMap) -> (GameMap, PreciseTime) {
         let line = Game::read_line();
+        let start_time = PreciseTime::now();
         let parts = line.split_whitespace();
         let mut iter = parts.into_iter();
         let mut game_state = GameState::parse(&mut iter);
@@ -68,6 +70,7 @@ impl Game {
             for player in game_state.players.iter_mut() {
                 let previous_ships = previous_map.state.players[player.id as usize].all_ships();
                 for mut ship in player.ships.iter_mut() {
+                    ship.owner_id = player.id;
                     let previous_ship = previous_ships.iter().find(|s| s.id == ship.id);
                     match previous_ship {
                         Some(previous_ship) => {
@@ -83,7 +86,7 @@ impl Game {
                 }
             }
         }
-        return GameMap::new(self, game_state);
+        return (GameMap::new(self, game_state), start_time);
     }
 
     pub fn send_command_queue(&self, commands: Vec<Command>) {

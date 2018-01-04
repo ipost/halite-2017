@@ -15,6 +15,8 @@ pub const WEAPON_RADIUS: f64 = 5.0;
 pub const WEAPON_DAMAGE: i32 = 64;
 // Radius in which explosions affect other entities
 pub const EXPLOSION_RADIUS: f64 = 10.0;
+pub const MAX_EXPLOSION_DAMAGE: i32 = 5 * MAX_SHIP_HEALTH;
+pub const MIN_EXPLOSION_DAMAGE: i32 = MAX_SHIP_HEALTH / 2;
 // Distance from the edge of the planet at which ships can try to dock
 pub const DOCK_RADIUS: f64 = 4.0;
 // Number of turns it takes to dock a ship
@@ -37,6 +39,6 @@ pub const DEFEND_PREFERENCE_2P: f64 = 0.90;
 pub const INTERCEPT_PREFERENCE_2P: f64 = 2.80;
 
 pub const DOCK_PREFERENCE_4P: f64 = 0.30;
-pub const RAID_PREFERENCE_4P: f64 = 0.70;
+pub const RAID_PREFERENCE_4P: f64 = 0.85;
 pub const DEFEND_PREFERENCE_4P: f64 = 0.80;
-pub const INTERCEPT_PREFERENCE_4P: f64 = 3.80;
+pub const INTERCEPT_PREFERENCE_4P: f64 = 9.80;
