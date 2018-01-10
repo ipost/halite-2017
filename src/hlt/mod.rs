@@ -1,3 +1,5 @@
+#[macro_use]
+pub mod macros;
 pub mod entity;
 pub mod game;
 pub mod logging;
@@ -7,5 +9,4 @@ pub mod game_map;
 pub mod player;
 pub mod collision;
 pub mod pathfind;
-pub mod macros;
 mod parse;

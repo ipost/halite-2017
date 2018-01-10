@@ -1,14 +1,5 @@
 
 use hlt::entity::{Entity, Position};
-// use hlt::constants::{SHIP_RADIUS};
-use std::f64::consts::PI;
-use hlt::logging::Logger;
-
-macro_rules! in_2pi (
-    ($angle:expr) => (($angle + (2f64 * PI)) % (2f64 * PI))
-    );
-
-#[macro_use]
 macro_rules! in_360 (
     ($angle:expr) => ($angle % 360.0)
     );
@@ -55,6 +46,7 @@ fn angle_around(start: Position, destination: Position, obstacle_pos: Position, 
     }
 }
 
+#[allow(dead_code)]
 pub fn long_angle_around(start: Position, destination: Position, obstacle_pos: Position, obstacle_size: f64) -> f64 {
     angle_around(start, destination, obstacle_pos, obstacle_size).1
 }
@@ -87,36 +79,3 @@ pub fn three_point_angle(p1: Position, p2: Position, p3: Position) -> f64 {
  * first object between ship and dest. Repeat for additional obstacles.
  * Points where the obstacle
  * between the ship and destination are the graph nodes */
-//
-
-/*
-pub fn pathfind<T: Entity>(ship: Ship, to: Position, game_map: &GameMap) -> Option<Command> {
-    None
-}
-
-pub fn distance_around_obstacle(start: Position,
-                                destination: Position,
-                                obstacle_pos: Position,
-                                obstacle_size: f64
-                                ) -> f64 {
-    // s = start position
-    // o = obstacle position
-    // d = destination position
-    // tan = position where trajectory is tangent to obstacle entering arc
-    // tan2 = position where trajectory is tangent to obstacle leaving arc
-    let d_s_d = start.distance_to(&destination);
-    let d_s_o = start.distance_to(&obstacle_pos);
-    let d_o_d = obstacle_pos.distance_to(&destination);
-    let total_radius = obstacle_size + 0.05;//+ SHIP_SIZE
-    let s_o_d_angle = three_point_angle(start, obstacle_pos, destination);
-    let s_o_tan_angle = (total_radius / d_s_o).acos();
-    let d_o_tan2_angle = (total_radius / d_o_d).acos();
-
-    // distance to tangent point on obstacle +
-    // distance second tangent point on obstacle to destination +
-    // length of arc between tangent points
-    ((total_radius / d_s_o).asin().cos() * d_s_o) +
-        ((total_radius / d_o_d).asin().cos() * d_o_d) +
-        ((s_o_d_angle - (s_o_tan_angle + d_o_tan2_angle)) * total_radius)
-}
-*/

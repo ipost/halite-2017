@@ -1,21 +1,15 @@
 use std::cell::Cell;
-use std::cmp::{max, min};
+use std::cmp::min;
 use std::fmt;
 
-use hlt::pathfind::{long_angle_around, short_angle_around};
+use hlt::pathfind::short_angle_around;
 use hlt::parse::Decodable;
 use hlt::command::Command;
 use hlt::constants::{DOCK_RADIUS, DOCK_TURNS, FUDGE, MAX_EXPLOSION_DAMAGE, MAX_SHIP_HEALTH, MAX_SPEED,
                      MIN_EXPLOSION_DAMAGE, SHIP_COST, SHIP_RADIUS, WEAPON_RADIUS};
 use hlt::player::Player;
+use std::collections::HashMap;
 use hlt::game_map::GameMap;
-use hlt::logging::Logger;
-extern crate time;
-use time::PreciseTime;
-use hlt::macros::*;
-macro_rules! assert_unreachable (
-    () => { panic!(format!("line {}", line!())) }
-    );
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Position(pub f64, pub f64);
@@ -95,7 +89,6 @@ pub struct Ship {
     pub progress: i32,
     pub cooldown: i32,
     pub command: Cell<Option<Command>>,
-    pub committed_ships: Cell<i32>,
 }
 
 impl Ship {
@@ -129,14 +122,6 @@ impl Ship {
         }
     }
 
-    pub fn increment_committed_ships(&self) {
-        self.committed_ships.set(1 + self.commitment());
-    }
-
-    pub fn commitment(&self) -> i32 {
-        self.committed_ships.get()
-    }
-
     pub fn in_dock_range(&self, planet: &Planet) -> bool {
         self.distance_to_less_than(planet, (DOCK_RADIUS + planet.get_radius()))
     }
@@ -162,10 +147,6 @@ impl Ship {
         self.docking_status == DockingStatus::UNDOCKED
     }
 
-    pub fn is_commandable(&self) -> bool {
-        self.docking_status == DockingStatus::UNDOCKED || self.docking_status == DockingStatus::DOCKED
-    }
-
     pub fn hp_percent(&self) -> f64 {
         self.hp as f64 / MAX_SHIP_HEALTH as f64
     }
@@ -186,28 +167,18 @@ impl Ship {
                     .fold(0.0, |acc, s| acc + s) / game_map.all_planets().len() as f64)
     }
 
-    // lower is higher priority (...)
-    // distance to ship * a multiplier in (0.5 - 1.0) based on hp%
-    pub fn raid_value(&self, enemy_ship: &Ship) -> f64 {
-        (enemy_ship.commitment() + 1) as f64 * self.distance_to_surface(enemy_ship)
-            * (0.5 + (enemy_ship.hp_percent() / 2.0))
+    pub fn raid_value(&self, enemy_ship: &Ship, game_map: &GameMap, commitment_map: &HashMap<i32, Vec<i32>>) -> f64 {
+        let defense_factor = 1.00 + (0.10 * total_ship_strength(enemy_ship.defenders(game_map).as_slice()));
+        (0.2 * commitment(enemy_ship, commitment_map) + 1.0) * self.distance_to_surface(enemy_ship)
+            * (0.5 + (enemy_ship.hp_percent() / 2.0)) * defense_factor
     }
 
-    // TODO: make commitment values on enemy ships equal to my total ship hp
-    // commitment rather than
-    // just ship count? or maybe as fractions of ship
-
-    pub fn intercept_value(&self, enemy_ship: &Ship) -> f64 {
-        ((enemy_ship.commitment() + 1) * 2 + 1) as f64 * self.distance_to_surface(enemy_ship)
+    pub fn intercept_value(&self, enemy_ship: &Ship, commitment_map: &HashMap<i32, Vec<i32>>) -> f64 {
+        (1.0 * commitment(enemy_ship, commitment_map) + 1.0) * self.distance_to_surface(enemy_ship)
             * scaled_to(0.75, enemy_ship.hp_percent())
     }
 
-    // given an enemy ship, get my closest docked ship to it. That distance * (0.75
-    // - 1.0 depending on docked ship hp%) is considered the 'threat'. Compare
-    // threat to how close self is to the docked ship to decide if it's a sensible
-    // defender
-    // need to figure out how to ensure this is comparable to attack_value
-    pub fn defense_value(&self, enemy_ship: &Ship, game_map: &GameMap) -> f64 {
+    pub fn defense_value(&self, enemy_ship: &Ship, game_map: &GameMap, commitment_map: &HashMap<i32, Vec<i32>>) -> f64 {
         let my_docked_ships: Vec<&Ship> = game_map
             .my_ships()
             .into_iter()
@@ -222,11 +193,11 @@ impl Ship {
             // (enemy_ship.commitment() * 2 + 1) as f64 * (distance_to_victim + (threat *
             // 1.2)) // / 2.0
             let distance_to_aggressor = self.distance_to_surface(enemy_ship);
-            (enemy_ship.commitment() * 999999 + 1) as f64 * ((distance_to_aggressor * 0.5) + (threat * 1.5))
+            (1.0 * commitment(enemy_ship, commitment_map) + 1.0) * ((distance_to_aggressor * 0.5) + (threat * 1.5))
         } else {
             // if I have no docked ships, there's nothing to defend, unless I can attempt
             // to preemptively defend ships which are going to dock
-            9999f64
+            9999.0
         }
     }
 
@@ -310,68 +281,12 @@ impl Ship {
         )
     }
 
-    fn collide_helper(&self, other_ship: &Ship, radius: f64) -> bool {
-        let s1vx = self.velocity_x.get();
-        let s2vx = other_ship.velocity_x.get();
-        let s1vy = self.velocity_y.get();
-        let s2vy = other_ship.velocity_y.get();
-
-        let Position(s1px, s1py) = self.get_position();
-        let Position(s2px, s2py) = other_ship.get_position();
-
-        let a = ((s1vx - s2vx).powi(2) + (s1vy - s2vy).powi(2));
-        let b = (2.0 * (s1px - s2px) * (s1vx - s2vx) + 2.0 * (s1py - s2py) * (s1vy - s2vy));
-        let c = ((s1px - s2px).powi(2) + (s1py - s2py).powi(2) - radius.powi(2));
-
-        let discriminant = b.powi(2) - (4.0 * a * c);
-
-        if discriminant < 0.0 {
-            false
-        } else {
-            let t1 = ((-1.0 * b) - discriminant.sqrt()) / (2.0 * a);
-            if 0.0 <= t1 && t1 <= 1.0 {
-                return true;
-            }
-            let t2 = ((-1.0 * b) + discriminant.sqrt()) / (2.0 * a);
-            (0.0 <= t2 && t2 <= 1.0)
-        }
-    }
-
-    pub fn will_collide_with(&self, other_ship: &Ship) -> bool {
-        self.collide_helper(other_ship, (SHIP_RADIUS * 2f64) + FUDGE)
-    }
-
     pub fn will_enter_attack_range(&self, other_ship: &Ship) -> bool {
-        self.collide_helper(other_ship, (SHIP_RADIUS * 2f64) + FUDGE + WEAPON_RADIUS)
+        check_collision(&self.get_obstacle(), &other_ship.get_danger_obstacle())
     }
 
     pub fn will_collide_with_obstacle(&self, obstacle: &Obstacle) -> bool {
-        let ship_vx = self.velocity_x.get();
-        let ob_vx = obstacle.velocity_x;
-        let ship_vy = self.velocity_y.get();
-        let ob_vy = obstacle.velocity_y;
-
-        let radius = obstacle.radius + SHIP_RADIUS + FUDGE;
-
-        let Position(ship_px, ship_py) = self.get_position();
-        let Position(ob_px, ob_py) = obstacle.position;
-
-        let a = ((ship_vx - ob_vx).powi(2) + (ship_vy - ob_vy).powi(2));
-        let b = (2.0 * (ship_px - ob_px) * (ship_vx - ob_vx) + 2.0 * (ship_py - ob_py) * (ship_vy - ob_vy));
-        let c = ((ship_px - ob_px).powi(2) + (ship_py - ob_py).powi(2) - radius.powi(2));
-
-        let discriminant = b.powi(2) - (4.0 * a * c);
-
-        if discriminant < 0.0 {
-            false
-        } else {
-            let t1 = ((-1.0 * b) - discriminant.sqrt()) / (2.0 * a);
-            if 0.0 <= t1 && t1 <= 1.0 {
-                return true;
-            }
-            let t2 = ((-1.0 * b) + discriminant.sqrt()) / (2.0 * a);
-            (0.0 <= t2 && t2 <= 1.0)
-        }
+        check_collision(&self.get_obstacle(), obstacle)
     }
 
     // create function which will navigate avoiding only specified entities
@@ -479,11 +394,55 @@ impl Ship {
     }
 }
 
+pub fn total_ship_strength(ships: &[&Ship]) -> f64 {
+    total_strength(&ships.iter().map(|s| s.hp).collect::<Vec<i32>>().as_slice())
+}
+
+pub fn total_strength(hps: &[i32]) -> f64 {
+    let per_ship_multiplier = 0.15;
+    hps.iter()
+        .map(|hp| *hp as f64 / MAX_SHIP_HEALTH as f64)
+        .fold(0.0, |acc, s| acc + s) * ((1.0 - per_ship_multiplier) + (per_ship_multiplier * hps.len() as f64))
+}
+
+pub fn commitment(ship: &Ship, commitment_map: &HashMap<i32, Vec<i32>>) -> f64 {
+    total_strength(commitment_map.get(&ship.id).unwrap().as_slice())
+}
+
 // takes a percent x and moves it into the scale of (scale - 1.0)
 // scaled_to(0.75, 0.6) == 0.9
 // scaled_to(0.25, 0.2) == 0.4
 fn scaled_to(scale: f64, x: f64) -> f64 {
     (x * (1.0 - scale)) + scale
+}
+
+fn check_collision(obstacle_1: &Obstacle, obstacle_2: &Obstacle) -> bool {
+    let ship_vx = obstacle_1.velocity_x;
+    let ob_vx = obstacle_2.velocity_x;
+    let ship_vy = obstacle_1.velocity_y;
+    let ob_vy = obstacle_2.velocity_y;
+
+    let radius = obstacle_1.radius + obstacle_2.radius + FUDGE;
+
+    let Position(ship_px, ship_py) = obstacle_1.position;
+    let Position(ob_px, ob_py) = obstacle_2.position;
+
+    let a = (ship_vx - ob_vx).powi(2) + (ship_vy - ob_vy).powi(2);
+    let b = 2.0 * (ship_px - ob_px) * (ship_vx - ob_vx) + 2.0 * (ship_py - ob_py) * (ship_vy - ob_vy);
+    let c = (ship_px - ob_px).powi(2) + (ship_py - ob_py).powi(2) - radius.powi(2);
+
+    let discriminant = b.powi(2) - (4.0 * a * c);
+
+    if discriminant < 0.0 {
+        false
+    } else {
+        let t1 = ((-1.0 * b) - discriminant.sqrt()) / (2.0 * a);
+        if 0.0 <= t1 && t1 <= 1.0 {
+            return true;
+        }
+        let t2 = ((-1.0 * b) + discriminant.sqrt()) / (2.0 * a);
+        (0.0 <= t2 && t2 <= 1.0)
+    }
 }
 
 fn dock_value_helper<T: Entity>(entity: &T, planet: &Planet, game_map: &GameMap) -> f64 {
@@ -552,7 +511,6 @@ impl Decodable for Ship {
         let progress = i32::parse(tokens);
         let cooldown = i32::parse(tokens);
         let command = Cell::new(None);
-        let committed_ships = Cell::new(0);
 
         let ship = Ship {
             id,
@@ -566,7 +524,6 @@ impl Decodable for Ship {
             progress,
             cooldown,
             command,
-            committed_ships,
         };
         return ship;
     }
@@ -635,11 +592,6 @@ impl Planet {
         }
     }
 
-    pub fn spawn_position(&self) -> Position {
-        // TODO: IMPLEMENT THIS
-        Position { 0: 0f64, 1: 0f64 }
-    }
-
     fn base_dock_value(&self, planet: &Planet, game_map: &GameMap) -> f64 {
         dock_value_helper(self, planet, game_map)
     }
@@ -652,6 +604,7 @@ impl Planet {
         }
     }
 
+    #[allow(dead_code)]
     pub fn damage_from_explosion(&self, ship: &Ship) -> i32 {
         let danger_radius = self.explosion_radius();
         let distance_to_surface = self.distance_to(ship) - self.radius;

@@ -3,8 +3,7 @@ use hlt::game::Game;
 use hlt::entity::{Entity, GameState, Obstacle, Planet, Position, Ship};
 use hlt::player::Player;
 use hlt::collision::intersect_segment_circle;
-// use hlt::logging::Logger;
-use hlt::constants::{MAX_SPEED, SHIP_RADIUS};
+use hlt::constants::SHIP_RADIUS;
 
 pub struct GameMap<'a> {
     game: &'a Game,
@@ -106,6 +105,23 @@ impl<'a> GameMap<'a> {
 
     pub fn obstacles_for_flee(&self, fleeing_ship: &Ship) -> Vec<Obstacle> {
         self.obstacles_for_dock(fleeing_ship)
+    }
+
+    pub fn obstacles_for_eradicate(&self, ship: &Ship, player_id: i32) -> Vec<Obstacle> {
+        let mut obstacles: Vec<Obstacle> = vec![];
+        obstacles.append(&mut self.all_planet_obstacles());
+        obstacles.append(&mut self.my_ship_obstacles(ship));
+        obstacles.append(&mut self.enemy_ships()
+            .into_iter()
+            .filter(|s| s.owner_id != player_id && !s.is_undocked())
+            .map(|s| s.get_obstacle())
+            .collect::<Vec<Obstacle>>());
+        obstacles.append(&mut self.enemy_ships()
+            .into_iter()
+            .filter(|s| s.owner_id != player_id && s.is_undocked())
+            .map(|s| s.get_danger_obstacle())
+            .collect::<Vec<Obstacle>>());
+        obstacles
     }
 
     pub fn obstacles_for_defend(&self, defending_ship: &Ship) -> Vec<Obstacle> {

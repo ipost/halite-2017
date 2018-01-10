@@ -1,5 +1,4 @@
 
-use hlt::logging::Logger;
 use std::io::stdin;
 use hlt::parse::Decodable;
 use hlt::entity::GameState;
@@ -69,6 +68,7 @@ impl Game {
         if previous_map.state.players.len() > 0 {
             for player in game_state.players.iter_mut() {
                 let previous_ships = previous_map.state.players[player.id as usize].all_ships();
+                player.strength = player.ships.len() as f64;
                 for mut ship in player.ships.iter_mut() {
                     ship.owner_id = player.id;
                     let previous_ship = previous_ships.iter().find(|s| s.id == ship.id);

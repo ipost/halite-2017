@@ -1,40 +1,21 @@
 //#![cfg_attr(feature = "clippy", feature(plugin))]
 //#![cfg_attr(feature = "clippy", plugin(clippy))]
 
+#[macro_use]
 mod hlt;
 
-use hlt::entity::{DockingStatus, Entity, GameState, Obstacle, Planet, Position, Ship};
+use hlt::entity::{commitment, total_ship_strength, Entity, GameState, Planet, Position, Ship};
 use hlt::game::Game;
 use hlt::logging::Logger;
 use hlt::command::Command;
-use hlt::macros::*;
 use std::collections::HashMap;
-macro_rules! assert_unreachable (
-    () => { panic!(format!("line {}", line!())) }
-    );
 use hlt::game_map::GameMap;
 use hlt::constants::{DEFEND_PREFERENCE_2P, DEFEND_PREFERENCE_4P, DOCK_PREFERENCE_2P, DOCK_PREFERENCE_4P,
                      INTERCEPT_PREFERENCE_2P, INTERCEPT_PREFERENCE_4P, RAID_PREFERENCE_2P, RAID_PREFERENCE_4P,
-                     DOCK_RADIUS, DOCK_TURNS, FUDGE, MAX_CORRECTIONS, MAX_SPEED, SHIP_RADIUS, WEAPON_RADIUS};
+                     DOCK_RADIUS, DOCK_TURNS, FUDGE, MAX_SPEED, SHIP_RADIUS};
 extern crate time;
 use time::PreciseTime;
 use std::cmp::{max, Ordering};
-
-macro_rules! assert_unreachable (
-    () => { panic!(format!("line {}", line!())) }
-    );
-macro_rules! print_timing (
-        ($code: block) => {{
-            let pt_start_time = PreciseTime::now();
-            let res = $code;
-            Logger::new(0).log(&format!("  time at line {}: {}", line!(), pt_start_time.to(PreciseTime::now())));
-            res
-        }}
-            );
-
-macro_rules! in_360 (
-    ($angle:expr) => (($angle + 360.0) % 360.0)
-    );
 
 #[derive(Debug)]
 struct Configs {
@@ -70,6 +51,7 @@ impl<'a> Move<'a> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn id(&self) -> i32 {
         match self {
             &Move::DockMove(p, _v) => p.id,
@@ -88,24 +70,24 @@ impl<'a> Move<'a> {
         }
     }
 
-    // pub fn commitment(&self) -> i32 {
-    //    match self {
-    //        //&Move::DockMove(p, v) => p.committed_ships.get(),
-    //        &Move::DockMove(p, v) => 0,
-    //        &Move::RaidMove(s, v) => s.committed_ships.get(),
-    //        &Move::DefendMove(s, v) => s.committed_ships.get(),
-
-    //        // do not intercept until we defend and raid
-    //        &Move::InterceptMove(s, v) => s.committed_ships.get() + 1,
-    //    }
-    // }
-
-    pub fn recalculate(&mut self, ship: &Ship, game_map: &GameMap, configs: &Configs) {
+    pub fn recalculate(
+        &mut self,
+        ship: &Ship,
+        game_map: &GameMap,
+        commitment_map: &HashMap<i32, Vec<i32>>,
+        configs: &Configs,
+    ) {
         match self {
             &mut Move::DockMove(p, ref mut v) => *v = configs.dock_preference * ship.dock_value(p, game_map),
-            &mut Move::RaidMove(s, ref mut v) => *v = configs.raid_preference * ship.raid_value(s),
-            &mut Move::DefendMove(s, ref mut v) => *v = configs.defend_preference * ship.defense_value(s, &game_map),
-            &mut Move::InterceptMove(s, ref mut v) => *v = configs.intercept_preference * ship.intercept_value(s),
+            &mut Move::RaidMove(s, ref mut v) => {
+                *v = configs.raid_preference * ship.raid_value(s, game_map, commitment_map)
+            }
+            &mut Move::DefendMove(s, ref mut v) => {
+                *v = configs.defend_preference * ship.defense_value(s, &game_map, commitment_map)
+            }
+            &mut Move::InterceptMove(s, ref mut v) => {
+                *v = configs.intercept_preference * ship.intercept_value(s, commitment_map)
+            }
         }
     }
 }
@@ -133,41 +115,45 @@ impl<'a> ShipMoves<'a> {
         enemy_undocked_ships: &Vec<&'b Ship>,
         configs: &Configs,
     ) -> ShipMoves<'b> {
-        let mut dock_moves: Vec<Move> = planets_to_dock
+        let mut dummy_commitment_map: HashMap<i32, Vec<i32>> = HashMap::new();
+        for ship in game_map.enemy_ships() {
+            dummy_commitment_map.insert(ship.id, vec![]);
+        }
+        let dock_moves: Vec<Move> = planets_to_dock
             .into_iter()
             .map(|planet| {
                 let mut m = Move::DockMove(planet, 0.0);
-                m.recalculate(ship, &game_map, &configs);
+                m.recalculate(ship, &game_map, &dummy_commitment_map, &configs);
                 m
             })
             .collect();
-        let mut raid_moves: Vec<Move> = enemy_docked_ships
+        let raid_moves: Vec<Move> = enemy_docked_ships
             .into_iter()
             .map(|enemy_ship| {
                 let mut m = Move::RaidMove(enemy_ship, 0.0);
-                m.recalculate(ship, &game_map, &configs);
+                m.recalculate(ship, &game_map, &dummy_commitment_map, &configs);
                 m
             })
             .collect();
         // make defend move function of friendly ship? create defend move only if one
         // of closer ships
-        let mut defend_moves: Vec<Move> = enemy_undocked_ships
+        let defend_moves: Vec<Move> = enemy_undocked_ships
             .into_iter()
             .map(|enemy_ship| {
                 let mut m = Move::DefendMove(enemy_ship, 0.0);
-                m.recalculate(ship, &game_map, &configs);
+                m.recalculate(ship, &game_map, &dummy_commitment_map, &configs);
+                m
+            })
+            .collect();
+        let intercept_moves: Vec<Move> = enemy_undocked_ships
+            .into_iter()
+            .map(|enemy_ship| {
+                let mut m = Move::InterceptMove(enemy_ship, 0.0);
+                m.recalculate(ship, &game_map, &dummy_commitment_map, &configs);
                 m
             })
             .collect();
         // let mut intercept_moves: Vec<Move> = vec![];
-        let mut intercept_moves: Vec<Move> = enemy_undocked_ships
-            .into_iter()
-            .map(|enemy_ship| {
-                let mut m = Move::InterceptMove(enemy_ship, 0.0);
-                m.recalculate(ship, &game_map, &configs);
-                m
-            })
-            .collect();
         let deqd_dock_moves = vec![];
         let deqd_raid_moves = vec![];
         let deqd_defend_moves = vec![];
@@ -218,18 +204,23 @@ impl<'a> ShipMoves<'a> {
         }
     }
 
-    pub fn recalculate_all_moves(&mut self, game_map: &GameMap, configs: &Configs) {
+    pub fn recalculate_all_moves(
+        &mut self,
+        game_map: &GameMap,
+        commitment_map: &HashMap<i32, Vec<i32>>,
+        configs: &Configs,
+    ) {
         for d_m in &mut self.dock_moves {
-            d_m.recalculate(self.ship, &game_map, &configs);
+            d_m.recalculate(self.ship, game_map, commitment_map, &configs);
         }
         for r_m in &mut self.raid_moves {
-            r_m.recalculate(self.ship, &game_map, &configs);
+            r_m.recalculate(self.ship, game_map, commitment_map, &configs);
         }
         for d_m in &mut self.defend_moves {
-            d_m.recalculate(self.ship, &game_map, &configs);
+            d_m.recalculate(self.ship, game_map, commitment_map, &configs);
         }
         for i_m in &mut self.intercept_moves {
-            i_m.recalculate(self.ship, &game_map, &configs);
+            i_m.recalculate(self.ship, game_map, commitment_map, &configs);
         }
     }
 
@@ -272,6 +263,7 @@ impl<'a> ShipMoves<'a> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn as_string(&self) -> String {
         format!(
             "
@@ -418,6 +410,11 @@ fn main() {
             }
         }
 
+        let mut commitment_map: HashMap<i32, Vec<i32>> = HashMap::new();
+        for ship in game_map.enemy_ships() {
+            commitment_map.insert(ship.id, vec![]);
+        }
+
         let mut all_ship_moves: Vec<ShipMoves> = ships_to_order
             .into_iter()
             .map(|ship| {
@@ -440,8 +437,21 @@ fn main() {
             .map(|p| p.all_ships().len())
             .max()
             .unwrap();
-        let should_flee =
-            game_map.state.players.len() > 2 && strongest_enemy_fleet > game_map.get_me().all_ships().len() * 3;
+        let weakest_enemy_player = game_map
+            .state
+            .players
+            .iter()
+            .filter(|p| p.id != game.my_id as i32)
+            .filter(|p| p.all_ships().len() > 0)
+            .min_by(|p, p2| {
+                p.all_ships()
+                    .len()
+                    .partial_cmp(&p2.all_ships().len())
+                    .unwrap()
+            })
+            .unwrap();
+        let should_flee = game_map.state.players.len() > 2
+            && strongest_enemy_fleet as f64 > game_map.get_me().all_ships().len() as f64 * 2.0;
 
         let planet_to_destroy: Option<&Planet> = None; /*{
             let enemy_ships = game_map.enemy_ships();
@@ -504,7 +514,7 @@ fn main() {
             // be if the commitment level of the move target changed
             for s_m in &mut all_ship_moves {
                 s_m.recombine_deqs();
-                s_m.recalculate_all_moves(&game_map, &configs);
+                s_m.recalculate_all_moves(&game_map, &commitment_map, &configs);
                 s_m.sort_moves();
                 s_m.refresh_best_move();
             }
@@ -541,31 +551,27 @@ fn main() {
                         (
                             ship_to_move.ship.id,
                             if should_flee {
-                                flee(
-                                    ship_to_move.ship,
-                                    &game_map,
-                                    &enemy_undocked_ships,
-                                    &mut logger,
-                                )
+                                flee(ship_to_move.ship, &game_map, &mut logger)
+                            // TODO: is this a good idea?
+                            // eradicate(
+                            //     ship_to_move.ship,
+                            //     &game_map,
+                            //     &mut logger,
+                            //     weakest_enemy_player.id,
+                            // )
                             } else if planet_to_destroy.is_some() && {
                                 let p = planet_to_destroy.unwrap();
                                 p.commitment() < p.hp && p.distance_to_surface(ship_to_move.ship) < MAX_SPEED as f64
                             } {
-                                kamikaze_planet(
-                                    ship_to_move.ship,
-                                    &game_map,
-                                    planet_to_destroy.unwrap(),
-                                    &mut attempted_commands,
-                                    &mut logger,
-                                )
+                                kamikaze_planet(ship_to_move.ship, planet_to_destroy.unwrap(), &mut logger)
                             } else {
-                                try_make_move(
+                                try_move(
                                     ship_to_move,
                                     &game_map,
                                     &enemy_undocked_ships,
                                     &my_docked_ships,
                                     relevant_opponents,
-                                    &mut attempted_commands,
+                                    &mut commitment_map,
                                     &mut logger,
                                 )
                             },
@@ -651,8 +657,9 @@ fn main() {
     }
 }
 
-// TODO instead of fleeing, attack weakest enemy
-fn flee(ship: &Ship, game_map: &GameMap, enemy_undocked_ships: &Vec<&Ship>, logger: &mut Logger) -> Option<Command> {
+// TODO instead of fleeing, attack weakest enemy?
+#[allow(dead_code)]
+fn flee(ship: &Ship, game_map: &GameMap, logger: &mut Logger) -> Option<Command> {
     let margin = 1.7;
     let small_margin = SHIP_RADIUS + FUDGE;
     let center = game_map.center();
@@ -717,13 +724,7 @@ fn flee(ship: &Ship, game_map: &GameMap, enemy_undocked_ships: &Vec<&Ship>, logg
     }
 }
 
-fn kamikaze_planet(
-    ship: &Ship,
-    game_map: &GameMap,
-    planet: &Planet,
-    attempted_commands: &mut HashMap<i32, i32>,
-    logger: &mut Logger,
-) -> Option<Command> {
+fn kamikaze_planet(ship: &Ship, planet: &Planet, logger: &mut Logger) -> Option<Command> {
     let speed = MAX_SPEED;
     let angle = ship.calculate_angle_between(planet).round() as i32;
     planet.committed_ships.set(ship.hp + planet.commitment());
@@ -737,13 +738,39 @@ fn kamikaze_planet(
     Some(ship.thrust(speed, angle))
 }
 
-fn try_make_move(
+fn eradicate(ship: &Ship, game_map: &GameMap, logger: &mut Logger, player_id: i32) -> Option<Command> {
+    let enemy_ships: Vec<&Ship> = game_map
+        .enemy_ships()
+        .into_iter()
+        .filter(|s| s.owner_id == player_id)
+        .collect();
+    let destination = ship.nearest_entity(&enemy_ships).get_position();
+    let speed_angle: Option<(i32, i32)> =
+        ship.smart_navigate(&destination, &game_map, game_map.obstacles_for_dock(ship));
+    match speed_angle {
+        Some((speed, angle)) => {
+            logger.log(&format!(
+                "  ship {} : speed: {}, angle: {}, target {} for eradicate player {}",
+                ship.id,
+                speed,
+                angle,
+                destination,
+                player_id
+            ));
+            Some(ship.thrust(speed, angle))
+        }
+        None => None,
+    }
+}
+
+// TODO form group out of ships committed to same target?
+fn try_move(
     ship_to_move: &ShipMoves,
     game_map: &GameMap,
     enemy_undocked_ships: &Vec<&Ship>,
     my_docked_ships: &Vec<&Ship>,
     relevant_opponents: usize,
-    attempted_commands: &mut HashMap<i32, i32>,
+    commitment_map: &mut HashMap<i32, Vec<i32>>,
     logger: &mut Logger,
 ) -> Option<Command> {
     let ship = ship_to_move.ship;
@@ -751,10 +778,11 @@ fn try_make_move(
         &Move::DockMove(planet, v) => {
             let destination = &ship.closest_point_to(planet, 1.0);
             // check if nearby enemies with commitment == 0
+            // problem: commitment is still 0 because defender has not gone yet
             // TODO: maybe move this to dock_value
             let nearby_enemies = enemy_undocked_ships.iter().any(|e_s| {
                 e_s.distance_to(destination) < 0.5 * (DOCK_TURNS * MAX_SPEED * 2) as f64
-                    && e_s.committed_ships.get() == 0
+                    && commitment(e_s, commitment_map) < 0.05
             });
             // TODO need cheese defense. if cheesed, move to sit on ally ship?
 
@@ -816,9 +844,9 @@ fn try_make_move(
             && ship.projected_damage_taken(game_map) * 2 >= ship.hp
         {
             // kamikaze if ship would die soon
-            let destination = &enemy_ship.get_position();
+            let destination = enemy_ship.get_position();
             let speed_angle = ship.smart_navigate(
-                destination,
+                &destination,
                 &game_map,
                 game_map.obstacles_for_raid_kamikaze(ship),
             );
@@ -836,7 +864,10 @@ fn try_make_move(
                         v,
                         ship.projected_damage_taken(game_map)
                     ));
-                    enemy_ship.increment_committed_ships();
+                    commitment_map
+                        .get_mut(&enemy_ship.id)
+                        .unwrap()
+                        .push(ship.hp);
                     Some(ship.thrust(speed, angle))
                 }
                 None => None,
@@ -846,7 +877,9 @@ fn try_make_move(
             let speed_angle: Option<(i32, i32)> = ship.smart_navigate(
                 destination,
                 &game_map,
-                if enemy_ship.commitment() as usize >= enemy_ship.defenders(game_map).len() {
+                if commitment(enemy_ship, commitment_map)
+                    >= total_ship_strength(enemy_ship.defenders(game_map).as_slice())
+                {
                     // should recalc moves for ships committed to the target ship if there are less
                     // defenders than ships committed to the target
                     // if raiders outnumber defenders, ignore defenders
@@ -870,7 +903,10 @@ fn try_make_move(
                         v,
                         ship.projected_damage_taken(game_map)
                     ));
-                    enemy_ship.increment_committed_ships();
+                    commitment_map
+                        .get_mut(&enemy_ship.id)
+                        .unwrap()
+                        .push(ship.hp);
                     Some(ship.thrust(speed, angle))
                 }
                 _ => {
@@ -927,7 +963,10 @@ fn try_make_move(
                             enemy_ship.id,
                             v
                         ));
-                        enemy_ship.increment_committed_ships();
+                        commitment_map
+                            .get_mut(&enemy_ship.id)
+                            .unwrap()
+                            .push(ship.hp);
                         Some(ship.thrust(speed, angle))
                     }
                     _ => {
@@ -961,7 +1000,10 @@ fn try_make_move(
                         enemy_ship.id,
                         v
                     ));
-                    enemy_ship.increment_committed_ships();
+                    commitment_map
+                        .get_mut(&enemy_ship.id)
+                        .unwrap()
+                        .push(ship.hp);
                     Some(ship.thrust(speed, angle))
                 }
                 _ => {
@@ -974,7 +1016,6 @@ fn try_make_move(
                 }
             }
         }
-        _ => assert_unreachable!(),
     };
     command
 }

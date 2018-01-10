@@ -30,15 +30,14 @@ pub const SPAWN_RADIUS: f64 = 2.0;
 
 
 // CONFIGURATIONS
-pub const MAX_CORRECTIONS: i32 = 180;
-pub const FUDGE: f64 = 0.001;
+pub const FUDGE: f64 = 0.0005;
 
 pub const DOCK_PREFERENCE_2P: f64 = 0.60;
 pub const RAID_PREFERENCE_2P: f64 = 0.75;
 pub const DEFEND_PREFERENCE_2P: f64 = 0.90;
 pub const INTERCEPT_PREFERENCE_2P: f64 = 2.80;
 
-pub const DOCK_PREFERENCE_4P: f64 = 0.30;
+pub const DOCK_PREFERENCE_4P: f64 = 0.35;
 pub const RAID_PREFERENCE_4P: f64 = 0.85;
 pub const DEFEND_PREFERENCE_4P: f64 = 0.80;
 pub const INTERCEPT_PREFERENCE_4P: f64 = 9.80;

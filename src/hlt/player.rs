@@ -5,6 +5,7 @@ use hlt::parse::Decodable;
 pub struct Player {
     pub id: i32,
     pub ships: Vec<Ship>,
+    pub strength: f64,
 }
 
 impl Player {
@@ -20,7 +21,12 @@ impl Decodable for Player {
     {
         let id = i32::parse(tokens);
         let ships = Vec::parse(tokens);
+        let strength = 0.0;
 
-        return Player { id, ships };
+        return Player {
+            id,
+            ships,
+            strength,
+        };
     }
 }
