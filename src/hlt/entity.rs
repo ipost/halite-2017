@@ -417,6 +417,13 @@ fn scaled_to(scale: f64, x: f64) -> f64 {
 }
 
 fn check_collision(obstacle_1: &Obstacle, obstacle_2: &Obstacle) -> bool {
+    match collision_times(obstacle_1, obstacle_2) {
+        Some((t1, t2)) => (0.0 <= t1 && t1 <= 1.0) || (0.0 <= t2 && t2 <= 1.0) || t1 < 0.0 && t2 > 1.0,
+        None => false,
+    }
+}
+
+fn collision_times(obstacle_1: &Obstacle, obstacle_2: &Obstacle) -> Option<(f64, f64)> {
     let ship_vx = obstacle_1.velocity_x;
     let ob_vx = obstacle_2.velocity_x;
     let ship_vy = obstacle_1.velocity_y;
@@ -434,16 +441,14 @@ fn check_collision(obstacle_1: &Obstacle, obstacle_2: &Obstacle) -> bool {
     let discriminant = b.powi(2) - (4.0 * a * c);
 
     if discriminant < 0.0 {
-        false
+        None
     } else {
         let t1 = ((-1.0 * b) - discriminant.sqrt()) / (2.0 * a);
-        if 0.0 <= t1 && t1 <= 1.0 {
-            return true;
-        }
         let t2 = ((-1.0 * b) + discriminant.sqrt()) / (2.0 * a);
-        (0.0 <= t2 && t2 <= 1.0)
+        Some((t1, t2))
     }
 }
+
 
 fn dock_value_helper<T: Entity>(entity: &T, planet: &Planet, game_map: &GameMap) -> f64 {
     let planet_pos = planet.get_position();
