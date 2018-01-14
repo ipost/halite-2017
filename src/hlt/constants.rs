@@ -32,7 +32,7 @@ pub const SPAWN_RADIUS: f64 = 2.0;
 // CONFIGURATIONS
 pub const FUDGE: f64 = 0.0005;
 
-pub const DOCK_PREFERENCE_2P: f64 = 0.60;
+pub const DOCK_PREFERENCE_2P: f64 = 0.50;
 pub const RAID_PREFERENCE_2P: f64 = 0.75;
 pub const DEFEND_PREFERENCE_2P: f64 = 0.90;
 pub const INTERCEPT_PREFERENCE_2P: f64 = 2.80;

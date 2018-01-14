@@ -15,6 +15,8 @@ use hlt::constants::{DEFEND_PREFERENCE_2P, DEFEND_PREFERENCE_4P, DOCK_PREFERENCE
                      DOCK_RADIUS, DOCK_TURNS, FUDGE, MAX_SPEED, SHIP_RADIUS};
 extern crate time;
 use time::PreciseTime;
+use std::time::Duration;
+use std::thread;
 use std::cmp::{max, Ordering};
 
 #[derive(Debug)]
@@ -145,6 +147,7 @@ impl<'a> ShipMoves<'a> {
                 m
             })
             .collect();
+        // TODO: disable intercept?
         let intercept_moves: Vec<Move> = enemy_undocked_ships
             .into_iter()
             .map(|enemy_ship| {
@@ -381,6 +384,7 @@ fn main() {
             .collect();
 
         // predict enemy ship movement
+        // TODO improve this
         let my_ships = game_map.my_ships();
         for s in enemy_undocked_ships.iter() {
             let my_closest = s.nearest_entity(my_ships.as_slice());
@@ -415,19 +419,24 @@ fn main() {
             commitment_map.insert(ship.id, vec![]);
         }
 
-        let mut all_ship_moves: Vec<ShipMoves> = ships_to_order
-            .into_iter()
-            .map(|ship| {
-                ShipMoves::new(
-                    ship,
-                    &game_map,
-                    &planets_to_dock,
-                    &enemy_docked_ships,
-                    &enemy_undocked_ships,
-                    &configs,
-                )
-            })
-            .collect();
+        let mut all_ship_moves: Vec<ShipMoves> = vec![];
+        for ship in ships_to_order {
+            if start_time.to(PreciseTime::now()).num_milliseconds() > 1900 {
+                logger.log(&format!(
+                    "timeout break in shipmove creation loop {}",
+                    start_time.to(PreciseTime::now()).num_milliseconds()
+                ));
+                break;
+            }
+            all_ship_moves.push(ShipMoves::new(
+                ship,
+                &game_map,
+                &planets_to_dock,
+                &enemy_docked_ships,
+                &enemy_undocked_ships,
+                &configs,
+            ))
+        }
 
         let strongest_enemy_fleet = game_map
             .state
@@ -657,7 +666,6 @@ fn main() {
     }
 }
 
-// TODO instead of fleeing, attack weakest enemy?
 #[allow(dead_code)]
 fn flee(ship: &Ship, game_map: &GameMap, logger: &mut Logger) -> Option<Command> {
     let margin = 1.7;
@@ -701,8 +709,12 @@ fn flee(ship: &Ship, game_map: &GameMap, logger: &mut Logger) -> Option<Command>
             1: small_margin,
         }
     };
-    let speed_angle: Option<(i32, i32)> =
-        ship.smart_navigate(&destination, &game_map, game_map.obstacles_for_flee(ship));
+    let speed_angle: Option<(i32, i32)> = ship.smart_navigate(
+        &destination,
+        &game_map,
+        game_map.obstacles_for_flee(ship),
+        true,
+    );
     match speed_angle {
         Some((speed, angle)) => {
             logger.log(&format!(
@@ -745,8 +757,12 @@ fn eradicate(ship: &Ship, game_map: &GameMap, logger: &mut Logger, player_id: i3
         .filter(|s| s.owner_id == player_id)
         .collect();
     let destination = ship.nearest_entity(&enemy_ships).get_position();
-    let speed_angle: Option<(i32, i32)> =
-        ship.smart_navigate(&destination, &game_map, game_map.obstacles_for_dock(ship));
+    let speed_angle: Option<(i32, i32)> = ship.smart_navigate(
+        &destination,
+        &game_map,
+        game_map.obstacles_for_dock(ship),
+        true,
+    );
     match speed_angle {
         Some((speed, angle)) => {
             logger.log(&format!(
@@ -812,8 +828,12 @@ fn try_move(
 
             // otherwise, fly towards planet
             } else {
-                let speed_angle: Option<(i32, i32)> =
-                    ship.smart_navigate(destination, &game_map, game_map.obstacles_for_dock(ship));
+                let speed_angle: Option<(i32, i32)> = ship.smart_navigate(
+                    destination,
+                    &game_map,
+                    game_map.obstacles_for_dock(ship),
+                    false,
+                );
                 match speed_angle {
                     Some((speed, angle)) => {
                         logger.log(&format!(
@@ -841,7 +861,7 @@ fn try_move(
         }
 
         &Move::RaidMove(enemy_ship, v) => if ship.distance_to_surface(enemy_ship) < MAX_SPEED as f64
-            && ship.projected_damage_taken(game_map) * 2 >= ship.hp
+            && ship.projected_damage_taken_two_turns(game_map) >= ship.hp
         {
             // kamikaze if ship would die soon
             let destination = enemy_ship.get_position();
@@ -849,6 +869,7 @@ fn try_move(
                 &destination,
                 &game_map,
                 game_map.obstacles_for_raid_kamikaze(ship),
+                false,
             );
             match speed_angle {
                 Some((speed, angle)) => {
@@ -862,7 +883,7 @@ fn try_move(
                         ship.distance_to_surface(enemy_ship),
                         enemy_ship.id,
                         v,
-                        ship.projected_damage_taken(game_map)
+                        ship.projected_damage_taken_two_turns(game_map)
                     ));
                     commitment_map
                         .get_mut(&enemy_ship.id)
@@ -884,15 +905,17 @@ fn try_move(
                     // defenders than ships committed to the target
                     // if raiders outnumber defenders, ignore defenders
                     // game_map.obstacles_for_raid_ignore_defenders(ship, enemy_ship)
+                    // game_map.obstacles_for_intercept(ship)
                     game_map.obstacles_for_raid(ship)
                 } else {
                     game_map.obstacles_for_raid(ship)
                 },
+                true,
             );
             match speed_angle {
                 Some((speed, angle)) => {
                     logger.log(&format!(
-                        "  ship {} (hp {}) : speed: {}, angle: {}, target: {}, dist: {} target ship: {} value: {}, projected damage taken: {}",
+                        "  ship {} (hp {}) : speed: {}, angle: {}, target: {}, dist: {} target ship: {} value: {}, PDT: {}",
                         ship.id,
                         ship.hp,
                         speed,
@@ -901,7 +924,7 @@ fn try_move(
                         ship.distance_to_surface(enemy_ship),
                         enemy_ship.id,
                         v,
-                        ship.projected_damage_taken(game_map)
+                        ship.projected_damage_taken_two_turns(game_map)
                     ));
                     commitment_map
                         .get_mut(&enemy_ship.id)
@@ -949,8 +972,12 @@ fn try_move(
                         (enemy_ship.get_position().1 - (dy / magnitude)),
                     )
                 };
-                let speed_angle: Option<(i32, i32)> =
-                    ship.smart_navigate(&destination, &game_map, game_map.obstacles_for_defend(ship));
+                let speed_angle: Option<(i32, i32)> = ship.smart_navigate(
+                    &destination,
+                    &game_map,
+                    game_map.obstacles_for_defend(ship),
+                    true,
+                );
                 match speed_angle {
                     Some((speed, angle)) => {
                         logger.log(&format!(
@@ -988,6 +1015,7 @@ fn try_move(
                 &destination,
                 &game_map,
                 game_map.obstacles_for_intercept(ship),
+                true,
             );
             match speed_angle {
                 Some((speed, angle)) => {

@@ -4,6 +4,7 @@ use std::fmt;
 
 use hlt::pathfind::short_angle_around;
 use hlt::parse::Decodable;
+use hlt::logging::Logger;
 use hlt::command::Command;
 use hlt::constants::{DOCK_RADIUS, DOCK_TURNS, FUDGE, MAX_EXPLOSION_DAMAGE, MAX_SHIP_HEALTH, MAX_SPEED,
                      MIN_EXPLOSION_DAMAGE, SHIP_COST, SHIP_RADIUS, WEAPON_RADIUS};
@@ -126,16 +127,18 @@ impl Ship {
         self.distance_to_less_than(planet, (DOCK_RADIUS + planet.get_radius()))
     }
 
-    pub fn in_attack_range(&self, ship: &Ship) -> bool {
+    pub fn in_attack_range_at(&self, ship: &Ship, t: f64) -> bool {
         // TODO: is this correct?
-        self.distance_to_less_than(ship, (WEAPON_RADIUS + SHIP_RADIUS + SHIP_RADIUS))
+        self.dist_to_at(ship, t) < WEAPON_RADIUS
     }
 
-    pub fn enemies_in_attack_range(&self, game_map: &GameMap) -> usize {
+    pub fn enemies_in_attack_range_at(&self, game_map: &GameMap, t: f64) -> usize {
         game_map
             .all_ships()
             .iter()
-            .filter(|s| s.owner_id != self.owner_id && s.in_attack_range(self))
+            .filter(|s| {
+                s.owner_id != self.owner_id && s.in_attack_range_at(self, t)
+            })
             .count()
     }
 
@@ -155,6 +158,7 @@ impl Ship {
         dock_value_helper(self, planet, game_map)
     }
 
+    // TODO play with dock, raid, intercept, defense heuristics
     pub fn dock_value(&self, planet: &Planet, game_map: &GameMap) -> f64 {
         self.base_dock_value(planet, game_map)
             + (0.5
@@ -169,12 +173,18 @@ impl Ship {
 
     pub fn raid_value(&self, enemy_ship: &Ship, game_map: &GameMap, commitment_map: &HashMap<i32, Vec<i32>>) -> f64 {
         let defense_factor = 1.00 + (0.10 * total_ship_strength(enemy_ship.defenders(game_map).as_slice()));
-        (0.2 * commitment(enemy_ship, commitment_map) + 1.0) * self.distance_to_surface(enemy_ship)
+        (0.125 * commitment(enemy_ship, commitment_map) + 1.0) * self.distance_to_surface(enemy_ship)
             * (0.5 + (enemy_ship.hp_percent() / 2.0)) * defense_factor
     }
 
     pub fn intercept_value(&self, enemy_ship: &Ship, commitment_map: &HashMap<i32, Vec<i32>>) -> f64 {
-        (1.0 * commitment(enemy_ship, commitment_map) + 1.0) * self.distance_to_surface(enemy_ship)
+        let c = commitment(enemy_ship, commitment_map);
+        let c = if c > enemy_ship.hp_percent() {
+            99999.0
+        } else {
+            1.0 + c
+        };
+        (1.0 * commitment(enemy_ship, commitment_map) + 3.0) * self.distance_to_surface(enemy_ship)
             * scaled_to(0.75, enemy_ship.hp_percent())
     }
 
@@ -186,14 +196,15 @@ impl Ship {
             .collect();
 
         if my_docked_ships.len() > 0 {
+            // TODO: avg distance to all docked friendly ships?
             let nearest_docked_ship = enemy_ship.nearest_entity(my_docked_ships.as_slice());
             let threat = enemy_ship.distance_to_surface(nearest_docked_ship)
                 * scaled_to(0.66667, nearest_docked_ship.hp_percent());
-            // let distance_to_victim = self.distance_to_surface(nearest_docked_ship);
-            // (enemy_ship.commitment() * 2 + 1) as f64 * (distance_to_victim + (threat *
-            // 1.2)) // / 2.0
+            let distance_to_victim = self.distance_to_surface(nearest_docked_ship);
             let distance_to_aggressor = self.distance_to_surface(enemy_ship);
-            (1.0 * commitment(enemy_ship, commitment_map) + 1.0) * ((distance_to_aggressor * 0.5) + (threat * 1.5))
+            let c = commitment(enemy_ship, commitment_map);
+            let c = if c > 1.0 { 9999.0 } else { 1.0 + c };
+            c * ((distance_to_victim * 0.5) + (threat * 1.5))
         } else {
             // if I have no docked ships, there's nothing to defend, unless I can attempt
             // to preemptively defend ships which are going to dock
@@ -239,9 +250,40 @@ impl Ship {
             .into_iter()
             .filter(|s| s.is_undocked() && s.owner_id != self.owner_id)
             .map(|enemy| {
-                if enemy.in_attack_range(self) {
-                    64 / enemy.enemies_in_attack_range(game_map)
+                if enemy.in_attack_range_at(self, 0.0) {
+                    64 / enemy.enemies_in_attack_range_at(game_map, 0.0)
                 } else if enemy.will_enter_attack_range(self) {
+                    64
+                } else {
+                    0
+                }
+            })
+            .fold(0, |acc, s| acc + s as i32)
+    }
+
+    pub fn projected_damage_taken_two_turns(&self, game_map: &GameMap) -> i32 {
+        game_map
+            .all_ships()
+            .into_iter()
+            .filter(|s| s.is_undocked() && s.owner_id != self.owner_id)
+            //TODO: check for spawning ships?
+            //TODO: account for destroyed friendly ships on turn two
+            //TODO: check for whether enemy ship will use its attack on anoterh ship before getting
+            // into range
+            .map(|enemy| {
+                if enemy.in_attack_range_at(self, 0.0) {
+                    2 * 64 / enemy.enemies_in_attack_range_at(game_map, 0.0)
+                } else if enemy.will_enter_attack_range(self) {
+                    let turn_2_dmg =
+                        if enemy.in_attack_range_at(self, 1.0) {
+                            64 / enemy.enemies_in_attack_range_at(game_map, 1.0)
+                        } else { 0 };
+                    64 + turn_2_dmg
+                } else if match collision_times(&self.get_obstacle(), &enemy.get_danger_obstacle()) {
+                        Some((t1, _t2)) => t1 > 1.0 && t1 < 2.0,
+                        None => false,
+                    }
+                {
                     64
                 } else {
                     0
@@ -297,8 +339,8 @@ impl Ship {
         destination: &Position,
         game_map: &GameMap,
         obstacles: Vec<Obstacle>,
+        allow_noops: bool,
     ) -> Option<(i32, i32)> {
-        // let mut logger = Logger::new(0);
         // first adjust destination to route around planets
         let closest_stationary_obstacle: Option<Obstacle> =
             game_map.closest_stationary_obstacle(&self.get_position(), destination, FUDGE);
@@ -368,7 +410,9 @@ impl Ship {
         // sort these by how close they'd leave the ship to the target
         // try all speed, angle combos
         let mut possible_thrusts: Vec<(i32, i32, Position)> = Vec::with_capacity(1 + (360 * MAX_SPEED) as usize);
-        possible_thrusts.push((0, 0, self.get_position()));
+        if allow_noops {
+            possible_thrusts.push((0, 0, self.get_position()));
+        }
         for angle in 0..359 {
             for speed in 1..(MAX_SPEED + 1) {
                 let v_x = speed as f64 * (angle as f64).to_radians().cos();
@@ -399,6 +443,7 @@ pub fn total_ship_strength(ships: &[&Ship]) -> f64 {
 }
 
 pub fn total_strength(hps: &[i32]) -> f64 {
+    // TODO tune this
     let per_ship_multiplier = 0.15;
     hps.iter()
         .map(|hp| *hp as f64 / MAX_SHIP_HEALTH as f64)
