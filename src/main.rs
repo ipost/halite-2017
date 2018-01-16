@@ -302,7 +302,7 @@ ShipMoves {{
 
 fn main() {
     // Initialize the game
-    let bot_name = "memetron_420v15";
+    let bot_name = "memetron_420v16";
     let game = Game::new(bot_name);
     // Initialize logging
     let mut logger = Logger::new(game.my_id);
@@ -561,7 +561,8 @@ fn main() {
                             ship_to_move.ship.id,
                             if should_flee {
                                 flee(ship_to_move.ship, &game_map, &mut logger)
-                            // TODO: is this a good idea?
+                            // TODO: is this a good idea? maybe eradicate if there's a weaker
+                            // enemy, otherwise flee?
                             // eradicate(
                             //     ship_to_move.ship,
                             //     &game_map,

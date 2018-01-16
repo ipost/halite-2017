@@ -172,9 +172,9 @@ impl Ship {
     }
 
     pub fn raid_value(&self, enemy_ship: &Ship, game_map: &GameMap, commitment_map: &HashMap<i32, Vec<i32>>) -> f64 {
-        let defense_factor = 1.00 + (0.10 * total_ship_strength(enemy_ship.defenders(game_map).as_slice()));
+        let defense_factor = 1.00 + (0.50 * total_ship_strength(enemy_ship.defenders(game_map).as_slice()));
         (1.0 * commitment(enemy_ship, commitment_map) + 1.0) * self.distance_to_surface(enemy_ship)
-            * (0.5 + (enemy_ship.hp_percent() / 2.0)) //* defense_factor
+            * (0.5 + (enemy_ship.hp_percent() / 2.0)) * defense_factor
     }
 
     pub fn intercept_value(&self, enemy_ship: &Ship, commitment_map: &HashMap<i32, Vec<i32>>) -> f64 {
